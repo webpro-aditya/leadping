@@ -1,0 +1,178 @@
+import React, { useState, useEffect } from 'react';
+import { Card } from '../ui/Card';
+import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
+import { fetchLeads, deleteLead } from '../../services/api';
+import type { Lead } from '../../types';
+
+interface SavedLeadsProps {
+  onSelectLead: (leadId: number) => void;
+}
+
+export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const loadLeads = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetchLeads();
+      setLeads(res.data || []);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch saved leads';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLeads();
+  }, []);
+
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this saved lead?')) return;
+    try {
+      await deleteLead(id);
+      setLeads((prev) => prev.filter((l) => l.id !== id));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const filteredLeads = leads.filter((lead) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      lead.company_name.toLowerCase().includes(q) ||
+      (lead.industry && lead.industry.toLowerCase().includes(q)) ||
+      (lead.website && lead.website.toLowerCase().includes(q))
+    );
+  });
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+    if (score >= 60) return 'text-amber-600 bg-amber-50 border-amber-200';
+    return 'text-rose-600 bg-rose-50 border-rose-200';
+  };
+
+  return (
+    <div className="space-y-3.5 pb-12">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 leading-tight">
+            Saved Leads
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {leads.length} qualified prospects in your pipeline
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={loadLeads} className="h-7 px-2 text-xs">
+          ↻ Refresh
+        </Button>
+      </div>
+
+      {/* Search Input */}
+      <div>
+        <input
+          type="text"
+          placeholder="Search by company or industry..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full text-xs px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        />
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="py-10 text-center">
+          <svg className="w-6 h-6 text-indigo-600 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-xs text-slate-400">Loading saved leads...</p>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <Card className="bg-rose-50 border-rose-200 !p-3">
+          <p className="text-xs text-rose-700">{error}</p>
+          <Button variant="outline" size="sm" className="mt-2 text-xs" onClick={loadLeads}>
+            Retry
+          </Button>
+        </Card>
+      )}
+
+      {/* Empty state */}
+      {!loading && !error && filteredLeads.length === 0 && (
+        <Card className="py-8 text-center text-slate-500">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
+            📁
+          </div>
+          <p className="text-xs font-semibold text-slate-700">No leads found</p>
+          <p className="text-[11px] text-slate-400 mt-1 max-w-[200px] mx-auto">
+            {searchQuery
+              ? 'No companies match your search criteria.'
+              : 'Analyze any website and click "Save Lead" to collect prospects here.'}
+          </p>
+        </Card>
+      )}
+
+      {/* Lead Cards List */}
+      <div className="space-y-2">
+        {filteredLeads.map((lead) => (
+          <div
+            key={lead.id}
+            onClick={() => onSelectLead(lead.id)}
+            className="p-3 bg-white border border-slate-200 rounded-xl hover:border-indigo-300 hover:shadow-xs transition-all cursor-pointer space-y-2 group"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-xs font-bold text-slate-900 group-hover:text-indigo-600 truncate">
+                  {lead.company_name}
+                </h3>
+                <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                  {lead.industry || 'B2B'} • {lead.location || 'Global'}
+                </p>
+              </div>
+
+              {/* ICP score badge */}
+              <div
+                className={`flex-shrink-0 px-2 py-0.5 rounded-full border text-xs font-bold ${getScoreColor(
+                  lead.icp_score?.overall ?? 0
+                )}`}
+              >
+                {lead.icp_score?.overall ?? 0}%
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-100">
+              <Badge variant="slate" size="sm">
+                {lead.status.toUpperCase()}
+              </Badge>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400">
+                  {new Date(lead.created_at).toLocaleDateString()}
+                </span>
+                <button
+                  onClick={(e) => handleDelete(e, lead.id)}
+                  title="Delete lead"
+                  className="text-slate-300 hover:text-rose-500 p-0.5 rounded"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
