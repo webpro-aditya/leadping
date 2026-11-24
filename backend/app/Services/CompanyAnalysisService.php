@@ -59,7 +59,14 @@ class CompanyAnalysisService
 
         // Save company, lead, signals, and analysis in a transaction
         $analysisRecord = DB::transaction(function () use ($user, $url, $sanitizedPageData, $aiResult) {
+            $isLinkedIn = str_contains($url, 'linkedin.com');
             $website = $this->extractCleanWebsite($url);
+
+            if ($isLinkedIn && $website === 'linkedin.com') {
+                $compName = $aiResult['company']['name'] ?? '';
+                $slug = Str::slug($compName);
+                $website = $slug ? "{$slug}.com" : "prospect-" . substr(md5($url), 0, 8) . ".com";
+            }
 
             // Create or update company
             $company = Company::updateOrCreate(

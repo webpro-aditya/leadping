@@ -33,6 +33,12 @@ export interface PageData {
     phones: string[];
   };
   technologies: string[];
+  prospect?: {
+    name: string;
+    title: string;
+    company: string;
+    location: string;
+  };
 }
 
 // ---- Analysis ----

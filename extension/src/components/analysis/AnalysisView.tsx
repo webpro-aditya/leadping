@@ -41,15 +41,37 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     resetAnalysis,
   } = useAnalysis();
 
-  // Load current tab URL on mount
+  // Load current tab URL on mount and listen to tab switches/navigation
   useEffect(() => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const activeTab = tabs[0];
-      if (activeTab?.url) {
-        setCurrentUrl(activeTab.url);
-        setCurrentTitle(activeTab.title || '');
+    const updateActiveTab = () => {
+      chrome.tabs?.query?.({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs?.[0];
+        if (activeTab?.url) {
+          setCurrentUrl(activeTab.url);
+          setCurrentTitle(activeTab.title || '');
+        }
+      });
+    };
+
+    updateActiveTab();
+
+    const handleTabUpdated = (_tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (changeInfo.url || changeInfo.title || changeInfo.status === 'complete') {
+        updateActiveTab();
       }
-    });
+    };
+
+    const handleTabActivated = () => {
+      updateActiveTab();
+    };
+
+    chrome.tabs?.onUpdated?.addListener(handleTabUpdated);
+    chrome.tabs?.onActivated?.addListener(handleTabActivated);
+
+    return () => {
+      chrome.tabs?.onUpdated?.removeListener(handleTabUpdated);
+      chrome.tabs?.onActivated?.removeListener(handleTabActivated);
+    };
   }, []);
 
   // Handler to extract page data from content script and trigger analysis
@@ -157,7 +179,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       <Card className="!p-3 bg-slate-900 text-white border-0 shadow-md">
         <div className="flex items-center justify-between text-xs mb-1.5">
           <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-            Active Target
+            {currentUrl.includes('linkedin.com/in/') ? '👤 LinkedIn Executive Prospect' : 'Active Target'}
           </span>
           <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -179,7 +201,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             onClick={handleAnalyze}
             isLoading={extracting}
           >
-            {extracting ? 'Inspecting Page...' : '⚡ Analyze Company with AI'}
+            {extracting
+              ? 'Extracting Profile...'
+              : currentUrl.includes('linkedin.com/in/')
+              ? '⚡ Qualify Prospect & Company with AI'
+              : '⚡ Analyze Company with AI'}
           </Button>
         )}
       </Card>

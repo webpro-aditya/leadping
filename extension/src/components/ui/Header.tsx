@@ -32,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, onTabChange }) => {
         {user && (
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-medium text-slate-600 truncate max-w-[100px]" title={user.email}>
-              {user.name.split(' ')[0]}
+              {(user.name || user.email || 'User').split(' ')[0]}
             </span>
             <button
               onClick={logout}

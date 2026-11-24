@@ -1,10 +1,25 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import Popup from './Popup';
 import '../styles/globals.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <Popup />
-  </React.StrictMode>
-);
+function mountPopup() {
+  const rootElement = document.getElementById('root');
+  if (!rootElement) return;
+
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <Popup />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', mountPopup);
+} else {
+  mountPopup();
+}
