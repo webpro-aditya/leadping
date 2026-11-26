@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { AuthProvider } from '../contexts/AuthContext';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import Popup from './Popup';
 import '../styles/globals.css';
@@ -12,7 +13,9 @@ function mountPopup() {
   root.render(
     <React.StrictMode>
       <ErrorBoundary>
-        <Popup />
+        <AuthProvider>
+          <Popup />
+        </AuthProvider>
       </ErrorBoundary>
     </React.StrictMode>
   );

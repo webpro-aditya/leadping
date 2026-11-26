@@ -54,7 +54,7 @@ export const OutreachGenerator: React.FC<OutreachGeneratorProps> = ({ leadId, on
   };
 
   return (
-    <div className="space-y-4 pb-12">
+    <div className="space-y-4 pb-4">
       {/* Top Bar */}
       <div className="flex items-center justify-between">
         <button

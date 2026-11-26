@@ -1,52 +1,79 @@
-import React from 'react';
-import { Button } from '../components/ui/Button';
+import React, { useState } from 'react';
+import { useAuth } from '../hooks/useAuth';
+import { Header } from '../components/ui/Header';
+import { LoginForm } from '../components/auth/LoginForm';
+import { RegisterForm } from '../components/auth/RegisterForm';
+import { AnalysisView } from '../components/analysis/AnalysisView';
+import { SavedLeads } from '../components/leads/SavedLeads';
+import { UsageDisplay } from '../components/usage/UsageDisplay';
+import { OutreachGenerator } from '../components/outreach/OutreachGenerator';
 
 export const Popup: React.FC = () => {
-  const handleOpenSidePanel = async () => {
-    try {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (activeTab?.id) {
-          chrome.sidePanel.open({ tabId: activeTab.id }).catch((err) => {
-            console.error(err);
-          });
-          window.close();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to open side panel', err);
-    }
-  };
+  const { isAuthenticated, loading } = useAuth();
+  const [authView, setAuthView] = useState<'login' | 'register'>('login');
+  const [currentTab, setCurrentTab] = useState<'analysis' | 'leads' | 'usage'>('analysis');
+  const [activeLeadForOutreach, setActiveLeadForOutreach] = useState<number | null>(null);
+
+  if (loading) {
+    return (
+      <div className="w-[440px] h-[580px] flex items-center justify-center bg-slate-50 font-sans">
+        <div className="text-center">
+          <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white font-bold text-xl flex items-center justify-center mx-auto mb-3 shadow-md animate-pulse">
+            L
+          </div>
+          <p className="text-xs text-slate-500 font-medium">Loading LeadPing AI...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="w-[440px] h-[580px] bg-slate-50 overflow-y-auto flex flex-col justify-center font-sans">
+        {authView === 'login' ? (
+          <LoginForm onSwitchToRegister={() => setAuthView('register')} />
+        ) : (
+          <RegisterForm onSwitchToLogin={() => setAuthView('login')} />
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="w-[300px] p-4 bg-white text-slate-800 font-sans">
-      <div className="flex items-center space-x-2.5 mb-3">
-        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-base shadow-sm">
-          L
-        </div>
-        <div>
-          <h1 className="text-sm font-bold text-slate-900 leading-none">LeadPing AI</h1>
-          <p className="text-[11px] text-slate-500 mt-0.5">Sales &amp; Lead Intelligence</p>
-        </div>
-      </div>
+    <div className="w-[440px] h-[580px] bg-slate-50 flex flex-col overflow-hidden font-sans">
+      <Header
+        currentTab={currentTab}
+        onTabChange={(tab) => {
+          setCurrentTab(tab);
+          setActiveLeadForOutreach(null);
+        }}
+      />
 
-      <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-        Analyze any company website, reveal deep buying signals, and generate hyper-personalized sales outreach in seconds.
-      </p>
+      <main className="flex-1 min-h-0 overflow-y-auto p-3.5 w-full">
+        {activeLeadForOutreach !== null ? (
+          <OutreachGenerator
+            leadId={activeLeadForOutreach}
+            onBack={() => setActiveLeadForOutreach(null)}
+          />
+        ) : (
+          <>
+            {currentTab === 'analysis' && (
+              <AnalysisView
+                onOpenOutreach={(leadId) => setActiveLeadForOutreach(leadId)}
+                onOpenSavedLeads={() => setCurrentTab('leads')}
+              />
+            )}
 
-      <Button
-        variant="primary"
-        size="md"
-        className="w-full font-medium"
-        onClick={handleOpenSidePanel}
-      >
-        Open Side Panel
-      </Button>
+            {currentTab === 'leads' && (
+              <SavedLeads
+                onSelectLead={(leadId) => setActiveLeadForOutreach(leadId)}
+              />
+            )}
 
-      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-        <span>Manifest V3</span>
-        <span>LeadPing AI v1.0.0</span>
-      </div>
+            {currentTab === 'usage' && <UsageDisplay />}
+          </>
+        )}
+      </main>
     </div>
   );
 };

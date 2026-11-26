@@ -27,6 +27,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   const [currentTitle, setCurrentTitle] = useState<string>('');
   const [pageData, setPageData] = useState<PageData | null>(null);
   const [extracting, setExtracting] = useState<boolean>(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
   const lastNormalizedUrlRef = useRef<string>('');
@@ -55,6 +56,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       if (normalized !== lastNormalizedUrlRef.current) {
         lastNormalizedUrlRef.current = normalized;
         setSaveSuccess(false);
+        setExtractError(null);
         void loadCachedForUrl(url);
       }
     };
@@ -123,6 +125,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   // Handler to extract page data from content script and trigger analysis
   const handleAnalyze = async (forceRefresh = false) => {
     setExtracting(true);
+    setExtractError(null);
     setSaveSuccess(false);
 
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
@@ -142,7 +145,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
       if (isSystemPage) {
         setExtracting(false);
-        alert('Cannot analyze browser system pages. Please navigate to a company website.');
+        setExtractError('Cannot analyze browser system pages. Please navigate to a company website.');
         return;
       }
 
@@ -189,7 +192,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                       }, forceRefresh);
                     } else {
                       setExtracting(false);
-                      alert('Cannot access this page. Please refresh the website and try again.');
+                      setExtractError('Cannot access this page. Please refresh the website and try again.');
                     }
                   }
                 );
@@ -197,7 +200,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             } catch (injectErr) {
               setExtracting(false);
               console.error('Failed to inject content script:', injectErr);
-              alert('Cannot analyze browser system pages or restricted tabs. Please navigate to a company website and refresh the page.');
+              setExtractError('Cannot analyze browser system pages or restricted tabs. Please navigate to a company website and refresh the page.');
             }
           }
         );
@@ -223,7 +226,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   };
 
   return (
-    <div className="space-y-4 pb-12">
+    <div className="space-y-4 pb-4">
       {/* Current page bar */}
       <Card className="!p-3 bg-slate-900 text-white border-0 shadow-md">
         <div className="flex items-center justify-between text-xs mb-1.5">
@@ -263,8 +266,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       {analyzing && <LoadingState currentStep={analysisStep} steps={steps} />}
 
       {/* Error state */}
-      {error && !analyzing && (
-        <ErrorState message={error} onRetry={() => handleAnalyze(false)} />
+      {(extractError || error) && !analyzing && (
+        <ErrorState message={(extractError || error)!} onRetry={() => handleAnalyze(false)} />
       )}
 
       {/* Analysis Results */}

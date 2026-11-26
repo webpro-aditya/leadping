@@ -19,6 +19,7 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
   const [page, setPage] = useState<number>(1);
   const [lastPage, setLastPage] = useState<number>(1);
   const [total, setTotal] = useState<number>(0);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   // Debounce server-side search queries so typing doesn't spam the backend
   useEffect(() => {
@@ -52,9 +53,18 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
     loadLeads(1, false, debouncedSearch);
   }, [loadLeads, debouncedSearch]);
 
-  const handleDelete = async (e: React.MouseEvent, id: number) => {
+  const requestDelete = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this saved lead?')) return;
+    setPendingDeleteId(id);
+  };
+
+  const cancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPendingDeleteId(null);
+  };
+
+  const confirmDelete = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
     try {
       setError(null);
       await deleteLead(id);
@@ -63,6 +73,8 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete lead';
       setError(msg);
+    } finally {
+      setPendingDeleteId(null);
     }
   };
 
@@ -73,7 +85,7 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
   };
 
   return (
-    <div className="space-y-3.5 pb-12">
+    <div className="space-y-3.5 pb-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold text-slate-900 leading-tight">
@@ -182,15 +194,34 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
                 <span className="text-[10px] text-slate-400">
                   {new Date(lead.created_at).toLocaleDateString()}
                 </span>
-                <button
-                  onClick={(e) => handleDelete(e, lead.id)}
-                  title="Delete lead"
-                  className="text-slate-300 hover:text-rose-500 p-0.5 rounded"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+                {pendingDeleteId === lead.id ? (
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={(e) => confirmDelete(e, lead.id)}
+                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-600 text-white hover:bg-rose-700"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelDelete}
+                      className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={(e) => requestDelete(e, lead.id)}
+                    title="Delete lead"
+                    className="text-slate-300 hover:text-rose-500 p-0.5 rounded"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
           </div>

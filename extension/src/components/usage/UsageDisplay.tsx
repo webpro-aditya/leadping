@@ -33,7 +33,7 @@ export const UsageDisplay: React.FC = () => {
   };
 
   return (
-    <div className="space-y-3.5 pb-12">
+    <div className="space-y-3.5 pb-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold text-slate-900 leading-tight">
@@ -87,7 +87,12 @@ export const UsageDisplay: React.FC = () => {
                 size="sm"
                 className="text-xs"
                 onClick={() => {
-                  window.open('http://localhost:5173/subscription', '_blank');
+                  const targetUrl = 'http://localhost:5173/subscription';
+                  if (chrome.tabs?.create) {
+                    chrome.tabs.create({ url: targetUrl });
+                  } else {
+                    window.open(targetUrl, '_blank');
+                  }
                 }}
               >
                 Upgrade Plan
