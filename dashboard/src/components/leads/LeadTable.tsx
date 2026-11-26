@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Lead } from '../../types';
 import { Table } from '../ui/Table';
 import { LeadStatusBadge } from './LeadStatusBadge';
+import { safeExternalUrl } from '../../utils/url';
 
 interface LeadTableProps {
   leads: Lead[];
@@ -35,30 +36,39 @@ export const LeadTable: React.FC<LeadTableProps> = ({
           <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
             {lead.company?.name || 'Unknown Company'}
           </div>
-          {lead.company?.size && (
-            <div className="text-xs text-slate-400 mt-0.5">{lead.company.size} employees</div>
+          {(lead.company?.company_size || lead.company?.size) && (
+            <div className="text-xs text-slate-400 mt-0.5">
+              {lead.company.company_size || lead.company.size} employees
+            </div>
           )}
         </div>
       ),
     },
     {
       header: 'Website',
-      accessor: (lead: Lead) => (
-        <a
-          href={lead.company?.website || lead.url}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center"
-        >
-          {lead.company?.website
-            ? lead.company.website.replace(/^https?:\/\//, '').replace(/\/$/, '')
-            : 'Website'}
-          <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-        </a>
-      ),
+      accessor: (lead: Lead) => {
+        const displayWebsite = lead.company?.website || lead.source_url || lead.url;
+        const safeHref = safeExternalUrl(displayWebsite);
+        if (!safeHref) {
+          return <span className="text-xs text-slate-400">{displayWebsite || 'N/A'}</span>;
+        }
+        return (
+          <a
+            href={safeHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center"
+          >
+            {displayWebsite
+              ? displayWebsite.replace(/^https?:\/\//, '').replace(/\/$/, '')
+              : 'Website'}
+            <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        );
+      },
     },
     {
       header: 'Industry',

@@ -15,15 +15,28 @@ export const OutreachGenerator: React.FC<OutreachGeneratorProps> = ({ leadId, on
   const [tone, setTone] = useState<'professional' | 'casual' | 'concise'>('professional');
   const [loading, setLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<OutreachMessage | null>(null);
+  const [cache, setCache] = useState<Record<string, OutreachMessage>>({});
   const [copied, setCopied] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleGenerate = async (selectedChannel = channel, selectedTone = tone) => {
+  const handleGenerate = async (
+    selectedChannel = channel,
+    selectedTone = tone,
+    regenerate = false
+  ) => {
+    const cacheKey = `${selectedChannel}:${selectedTone}`;
+    if (!regenerate && cache[cacheKey]) {
+      setError(null);
+      setMessage(cache[cacheKey]);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      const res = await generateOutreach(leadId, selectedChannel, selectedTone);
+      const res = await generateOutreach(leadId, selectedChannel, selectedTone, regenerate);
       setMessage(res.data);
+      setCache((prev) => ({ ...prev, [cacheKey]: res.data }));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to generate outreach';
       setError(msg);
@@ -227,7 +240,7 @@ export const OutreachGenerator: React.FC<OutreachGeneratorProps> = ({ leadId, on
                 variant="ghost"
                 size="sm"
                 className="text-[11px] h-6 px-2 text-indigo-600"
-                onClick={() => handleGenerate(channel, tone)}
+                onClick={() => handleGenerate(channel, tone, true)}
               >
                 🔄 Regenerate
               </Button>

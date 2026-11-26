@@ -25,6 +25,10 @@ class AIAnalysis extends Model
         'tokens_used',
     ];
 
+    protected $hidden = [
+        'raw_response',
+    ];
+
     protected function casts(): array
     {
         return [

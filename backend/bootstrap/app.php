@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -16,10 +17,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(SecurityHeaders::class);
+
         $middleware->redirectGuestsTo(function (Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 return null;
             }
+
             return '/login';
         });
     })
@@ -33,7 +37,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'success' => false,
                     'data' => $e->errors(),
-                    'message' => 'Validation failed: ' . collect($e->errors())->flatten()->first(),
+                    'message' => 'Validation failed: '.collect($e->errors())->flatten()->first(),
                 ], 422);
             }
         });
@@ -61,6 +65,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (Throwable $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 $isDebug = config('app.debug', false);
+
                 return response()->json([
                     'success' => false,
                     'data' => $isDebug ? ['exception' => get_class($e), 'trace' => $e->getTraceAsString()] : [],

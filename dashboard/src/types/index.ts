@@ -19,31 +19,42 @@ export interface Company {
   industry: string;
   description: string;
   size?: string;
+  company_size?: string;
   location?: string;
   founded?: string;
   technologies?: string[];
+  products_services?: string[];
 }
 
 export interface BuyingSignal {
-  signal: string;
+  signal?: string;
+  description?: string;
   confidence: 'high' | 'medium' | 'low';
-  evidence: string;
+  evidence?: string;
+  source_url?: string;
 }
 
 export interface PainPoint {
-  pain_point: string;
-  severity: 'high' | 'medium' | 'low';
+  pain_point?: string;
+  title?: string;
+  description?: string;
+  severity?: 'high' | 'medium' | 'low';
+  confidence?: 'high' | 'medium' | 'low';
   explanation: string;
 }
 
 export interface Opportunity {
-  opportunity: string;
+  opportunity?: string;
+  title?: string;
+  description?: string;
   priority: 'high' | 'medium' | 'low';
-  approach: string;
+  approach?: string;
+  potential_solution?: string;
 }
 
 export interface OutreachMessage {
-  type: string;
+  type?: string;
+  channel?: string;
   subject?: string;
   body: string;
 }
@@ -51,14 +62,20 @@ export interface OutreachMessage {
 export interface Lead {
   id: number;
   user_id: number;
-  url: string;
+  url?: string;
+  source_url?: string;
   company: Company;
   icp_score: number;
+  buying_intent_score?: number;
+  pain_fit_score?: number;
+  overall_score?: number;
   icp_breakdown?: Record<string, number>;
-  buying_signals: BuyingSignal[];
+  buying_signals?: BuyingSignal[];
+  signals?: BuyingSignal[];
   pain_points: PainPoint[];
   opportunities: Opportunity[];
-  summary: string;
+  summary?: string;
+  ai_summary?: string;
   status: LeadStatus;
   notes?: string;
   outreach_messages?: OutreachMessage[];
@@ -127,4 +144,5 @@ export interface LeadFilters {
   sort_dir?: 'asc' | 'desc';
   page?: number;
   per_page?: number;
+  compact?: number;
 }

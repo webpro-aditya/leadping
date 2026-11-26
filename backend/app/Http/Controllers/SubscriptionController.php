@@ -19,8 +19,9 @@ class SubscriptionController extends Controller
         $user = $request->user();
         $subscription = $user->subscription?->load('plan');
 
-        if (!$subscription) {
+        if (! $subscription) {
             $freePlan = Plan::where('name', 'free')->first();
+
             return $this->successResponse([
                 'subscription' => null,
                 'plan' => $freePlan,

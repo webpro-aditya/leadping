@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { paymentsApi } from '../services/api';
+import { loadRazorpayScript } from '../utils/razorpay';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
@@ -17,11 +19,111 @@ interface PlanDetail {
   isPopular?: boolean;
 }
 
+interface TransactionItem {
+  id: number;
+  gateway: string;
+  billing_cycle: 'monthly' | 'annual';
+  amount: number;
+  currency: string;
+  gateway_payment_id?: string;
+  status: 'pending' | 'paid' | 'failed' | 'refunded';
+  created_at: string;
+  plan?: { name: string; display_name: string };
+}
+
 export const SubscriptionPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [selectedBilling, setSelectedBilling] = useState<'monthly' | 'annual'>('monthly');
+  const [upgradingPlan, setUpgradingPlan] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
 
   const currentPlanName = (user?.plan || 'free').toLowerCase();
+
+  const loadTransactions = useCallback(async () => {
+    try {
+      const { data } = await paymentsApi.transactions();
+      setTransactions(data.data.data || []);
+    } catch {
+      /* ignore if no history yet */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTransactions();
+  }, [loadTransactions]);
+
+  const handleUpgrade = async (planId: string, planName: string) => {
+    if (planId === 'free' || planId === currentPlanName) return;
+
+    setStatusMessage(null);
+    setUpgradingPlan(planId);
+
+    try {
+      const [{ data }] = await Promise.all([
+        paymentsApi.createCheckout({
+          plan: planId,
+          billing_cycle: selectedBilling,
+        }),
+        loadRazorpayScript(),
+      ]);
+
+      const checkout = data.data;
+      if (!window.Razorpay) {
+        throw new Error('Razorpay Checkout SDK could not be initialized.');
+      }
+
+      const rzp = new window.Razorpay({
+        ...checkout.checkout_payload,
+        theme: { color: '#4f46e5' },
+        handler: async (paymentResponse) => {
+          try {
+            const verifyRes = await paymentsApi.verifyPayment({
+              gateway: checkout.gateway,
+              gateway_order_id: paymentResponse.razorpay_order_id,
+              gateway_payment_id: paymentResponse.razorpay_payment_id,
+              gateway_signature: paymentResponse.razorpay_signature,
+            });
+
+            await refreshUser();
+            await loadTransactions();
+            setStatusMessage({
+              type: 'success',
+              text: `Upgraded to ${verifyRes.data.data.plan?.display_name || planName} plan successfully!`,
+            });
+          } catch (verifyErr: unknown) {
+            const errMsg =
+              (verifyErr as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+              (verifyErr instanceof Error ? verifyErr.message : 'Payment verification failed.');
+            setStatusMessage({ type: 'error', text: errMsg });
+          } finally {
+            setUpgradingPlan(null);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setUpgradingPlan(null);
+          },
+        },
+      });
+
+      rzp.on('payment.failed', (failureResp) => {
+        setUpgradingPlan(null);
+        setStatusMessage({
+          type: 'error',
+          text: failureResp?.error?.description || 'Payment failed or was cancelled.',
+        });
+      });
+
+      rzp.open();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err instanceof Error ? err.message : 'Failed to start checkout.');
+      setStatusMessage({ type: 'error', text: msg });
+      setUpgradingPlan(null);
+    }
+  };
 
   const plans: PlanDetail[] = [
     {
@@ -130,10 +232,24 @@ export const SubscriptionPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Inline Checkout Feedback */}
+      {statusMessage && (
+        <div
+          className={`rounded-xl p-4 text-sm border ${
+            statusMessage.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {statusMessage.text}
+        </div>
+      )}
+
       {/* Plan Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {plans.map((p) => {
           const isCurrent = currentPlanName === p.id;
+          const isFreeCard = p.id === 'free';
 
           return (
             <div
@@ -208,10 +324,15 @@ export const SubscriptionPage: React.FC = () => {
                 <Button
                   variant={p.isPopular ? 'primary' : 'secondary'}
                   className="w-full"
-                  disabled={isCurrent}
-                  onClick={() => alert(`Upgrading to ${p.name} plan is ready for checkout!`)}
+                  disabled={isCurrent || isFreeCard || upgradingPlan !== null}
+                  isLoading={upgradingPlan === p.id}
+                  onClick={() => handleUpgrade(p.id, p.name)}
                 >
-                  {isCurrent ? 'Current Plan' : `Upgrade to ${p.name}`}
+                  {isCurrent
+                    ? 'Current Plan'
+                    : isFreeCard
+                    ? 'Free Tier'
+                    : `Upgrade to ${p.name}`}
                 </Button>
               </div>
             </div>
@@ -279,6 +400,51 @@ export const SubscriptionPage: React.FC = () => {
           </table>
         </div>
       </Card>
+
+      {/* Billing & Transaction History */}
+      {transactions.length > 0 && (
+        <Card title="Payment History" subtitle="Recent subscription upgrade transactions">
+          <div className="overflow-x-auto -mx-6 -mb-6">
+            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-6 py-3 font-semibold text-slate-500 uppercase">Date</th>
+                  <th className="px-6 py-3 font-semibold text-slate-500 uppercase">Plan</th>
+                  <th className="px-6 py-3 font-semibold text-slate-500 uppercase">Cycle</th>
+                  <th className="px-6 py-3 font-semibold text-slate-500 uppercase">Gateway</th>
+                  <th className="px-6 py-3 font-semibold text-slate-500 uppercase">Amount</th>
+                  <th className="px-6 py-3 font-semibold text-slate-500 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {transactions.map((tx) => (
+                  <tr key={tx.id}>
+                    <td className="px-6 py-3 text-slate-600">
+                      {new Date(tx.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-3 font-semibold text-slate-900 capitalize">
+                      {tx.plan?.display_name || tx.plan?.name || 'Upgrade'}
+                    </td>
+                    <td className="px-6 py-3 text-slate-600 capitalize">{tx.billing_cycle}</td>
+                    <td className="px-6 py-3 text-slate-600 uppercase">{tx.gateway}</td>
+                    <td className="px-6 py-3 font-medium text-slate-900">
+                      {(tx.amount / 100).toFixed(2)} {tx.currency}
+                    </td>
+                    <td className="px-6 py-3">
+                      <Badge
+                        variant={tx.status === 'paid' ? 'success' : tx.status === 'failed' ? 'danger' : 'warning'}
+                        size="sm"
+                      >
+                        {tx.status.toUpperCase()}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAnalysis } from '../../hooks/useAnalysis';
+import { normalizeTargetUrl } from '../../utils/url';
 import { CompanyOverview } from './CompanyOverview';
 import { ICPScore } from './ICPScore';
 import { BuyingSignals } from './BuyingSignals';
@@ -28,6 +29,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   const [extracting, setExtracting] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
+  const lastNormalizedUrlRef = useRef<string>('');
+
   const {
     analyzing,
     analysisStep,
@@ -36,6 +39,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     error,
     savedLead,
     savingLead,
+    fromLocalCache,
+    loadCachedForUrl,
     runAnalysis,
     saveCurrentLead,
     resetAnalysis,
@@ -43,12 +48,42 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
   // Load current tab URL on mount and listen to tab switches/navigation
   useEffect(() => {
+    const syncUrlChange = (url: string, title: string) => {
+      setCurrentUrl(url);
+      setCurrentTitle(title);
+      const normalized = normalizeTargetUrl(url);
+      if (normalized !== lastNormalizedUrlRef.current) {
+        lastNormalizedUrlRef.current = normalized;
+        setSaveSuccess(false);
+        void loadCachedForUrl(url);
+      }
+    };
+
     const updateActiveTab = () => {
       chrome.tabs?.query?.({ active: true, currentWindow: true }, (tabs) => {
         const activeTab = tabs?.[0];
-        if (activeTab?.url) {
-          setCurrentUrl(activeTab.url);
-          setCurrentTitle(activeTab.title || '');
+        const tabUrl = activeTab?.url || activeTab?.pendingUrl || '';
+        const tabTitle = activeTab?.title || '';
+
+        if (tabUrl) {
+          syncUrlChange(tabUrl, tabTitle);
+          return;
+        }
+
+        if (activeTab?.id) {
+          chrome.tabs.sendMessage(
+            activeTab.id,
+            { type: 'GET_PAGE_INFO' },
+            (res) => {
+              if (!chrome.runtime.lastError && res?.success && res.url) {
+                syncUrlChange(res.url, res.title || '');
+              } else {
+                syncUrlChange('', '');
+              }
+            }
+          );
+        } else {
+          syncUrlChange('', '');
         }
       });
     };
@@ -72,10 +107,21 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       chrome.tabs?.onUpdated?.removeListener(handleTabUpdated);
       chrome.tabs?.onActivated?.removeListener(handleTabActivated);
     };
-  }, []);
+  }, [loadCachedForUrl]);
+
+  const applyExtractedData = async (extracted: PageData, forceRefresh = false) => {
+    if (extracted.url) {
+      setCurrentUrl(extracted.url);
+      lastNormalizedUrlRef.current = normalizeTargetUrl(extracted.url);
+    }
+    if (extracted.title) setCurrentTitle(extracted.title);
+    setPageData(extracted);
+    setExtracting(false);
+    await runAnalysis(extracted, forceRefresh);
+  };
 
   // Handler to extract page data from content script and trigger analysis
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (forceRefresh = false) => {
     setExtracting(true);
     setSaveSuccess(false);
 
@@ -86,70 +132,73 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         return;
       }
 
-      // Check if URL is analyzable
-      if (
-        !activeTab.url ||
-        activeTab.url.startsWith('chrome://') ||
-        activeTab.url.startsWith('chrome-extension://') ||
-        activeTab.url.startsWith('edge://')
-      ) {
+      const tabUrl = activeTab.url || activeTab.pendingUrl || '';
+      const isSystemPage =
+        tabUrl.startsWith('chrome://') ||
+        tabUrl.startsWith('chrome-extension://') ||
+        tabUrl.startsWith('edge://') ||
+        tabUrl.startsWith('about:') ||
+        tabUrl.startsWith('devtools://');
+
+      if (isSystemPage) {
         setExtracting(false);
         alert('Cannot analyze browser system pages. Please navigate to a company website.');
         return;
       }
 
       try {
-        // Send message to content script
+        // Send message to content script (also supplies url/title if tab.url is omitted)
         chrome.tabs.sendMessage(
           activeTab.id,
           { type: 'EXTRACT_PAGE_DATA' },
           async (response) => {
-            setExtracting(false);
-            if (chrome.runtime.lastError || !response?.success) {
-              // Content script might not be injected yet, attempt programmatic injection
-              try {
-                await chrome.scripting.executeScript({
-                  target: { tabId: activeTab.id! },
-                  files: ['content.js'],
-                });
-
-                // Retry extraction after injection
-                setTimeout(() => {
-                  chrome.tabs.sendMessage(
-                    activeTab.id!,
-                    { type: 'EXTRACT_PAGE_DATA' },
-                    async (retryRes) => {
-                      if (retryRes?.success) {
-                        setPageData(retryRes.data);
-                        await runAnalysis(retryRes.data);
-                      } else {
-                        // Fallback: minimal page data
-                        const fallbackData: PageData = {
-                          url: activeTab.url!,
-                          title: activeTab.title || '',
-                          meta_description: '',
-                          headings: [],
-                          content: '',
-                          links: [],
-                          opengraph: {},
-                          json_ld: [],
-                          contact_info: { emails: [], phones: [] },
-                          technologies: [],
-                        };
-                        setPageData(fallbackData);
-                        await runAnalysis(fallbackData);
-                      }
-                    }
-                  );
-                }, 300);
-              } catch (injectErr) {
-                console.error('Failed to inject content script:', injectErr);
-              }
+            if (!chrome.runtime.lastError && response?.success && response.data) {
+              await applyExtractedData(response.data, forceRefresh);
               return;
             }
 
-            setPageData(response.data);
-            await runAnalysis(response.data);
+            // Content script might not be injected yet, attempt programmatic injection
+            try {
+              await chrome.scripting.executeScript({
+                target: { tabId: activeTab.id! },
+                files: ['content.js'],
+              });
+
+              setTimeout(() => {
+                chrome.tabs.sendMessage(
+                  activeTab.id!,
+                  { type: 'EXTRACT_PAGE_DATA' },
+                  async (retryRes) => {
+                    if (!chrome.runtime.lastError && retryRes?.success && retryRes.data) {
+                      await applyExtractedData(retryRes.data, forceRefresh);
+                      return;
+                    }
+
+                    if (tabUrl) {
+                      await applyExtractedData({
+                        url: tabUrl,
+                        title: activeTab.title || '',
+                        meta_description: '',
+                        headings: [],
+                        content: '',
+                        links: [],
+                        opengraph: {},
+                        json_ld: [],
+                        contact_info: { emails: [], phones: [] },
+                        technologies: [],
+                      }, forceRefresh);
+                    } else {
+                      setExtracting(false);
+                      alert('Cannot access this page. Please refresh the website and try again.');
+                    }
+                  }
+                );
+              }, 300);
+            } catch (injectErr) {
+              setExtracting(false);
+              console.error('Failed to inject content script:', injectErr);
+              alert('Cannot analyze browser system pages or restricted tabs. Please navigate to a company website and refresh the page.');
+            }
           }
         );
       } catch (err) {
@@ -198,7 +247,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             variant="primary"
             size="md"
             className="w-full mt-3 bg-indigo-500 hover:bg-indigo-600 font-semibold"
-            onClick={handleAnalyze}
+            onClick={() => handleAnalyze(false)}
             isLoading={extracting}
           >
             {extracting
@@ -215,7 +264,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
       {/* Error state */}
       {error && !analyzing && (
-        <ErrorState message={error} onRetry={handleAnalyze} />
+        <ErrorState message={error} onRetry={() => handleAnalyze(false)} />
       )}
 
       {/* Analysis Results */}
@@ -261,8 +310,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             </Button>
 
             <button
-              onClick={resetAnalysis}
-              title="Re-analyze"
+              onClick={() => {
+                if (fromLocalCache) {
+                  handleAnalyze(true);
+                } else {
+                  resetAnalysis();
+                }
+              }}
+              title={fromLocalCache ? 'Refresh live AI analysis' : 'Re-analyze'}
               className="p-2 text-slate-400 hover:text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button';
 
 export const DashboardPage: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [stats, setStats] = useState({ total: 0, high: 0, medium: 0, low: 0 });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -16,8 +17,19 @@ export const DashboardPage: React.FC = () => {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        const { data } = await leadsApi.list({ per_page: 50, sort_by: 'created_at', sort_dir: 'desc' });
-        setLeads(data.data.data);
+        const [statsRes, leadsRes] = await Promise.all([
+          leadsApi.stats(),
+          leadsApi.list({ per_page: 5, compact: 1, sort_by: 'created_at', sort_dir: 'desc' }),
+        ]);
+
+        const s = statsRes.data.data;
+        setStats({
+          total: s.total,
+          high: s.high_potential,
+          medium: s.medium_potential,
+          low: s.low_potential,
+        });
+        setLeads(leadsRes.data.data.data);
       } catch {
         /* ignore error */
       } finally {
@@ -26,25 +38,6 @@ export const DashboardPage: React.FC = () => {
     };
     fetchDashboardData();
   }, []);
-
-  const stats = useMemo(() => {
-    let high = 0;
-    let medium = 0;
-    let low = 0;
-
-    leads.forEach((l) => {
-      if (l.icp_score >= 80) high++;
-      else if (l.icp_score >= 50) medium++;
-      else low++;
-    });
-
-    return {
-      total: leads.length,
-      high,
-      medium,
-      low,
-    };
-  }, [leads]);
 
   const recentLeads = useMemo(() => leads.slice(0, 5), [leads]);
 

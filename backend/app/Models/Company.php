@@ -23,6 +23,10 @@ class Company extends Model
         'raw_data',
     ];
 
+    protected $hidden = [
+        'raw_data',
+    ];
+
     protected function casts(): array
     {
         return [

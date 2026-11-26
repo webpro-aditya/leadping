@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -22,22 +23,27 @@ class AuthController extends Controller
     public function register(RegisterRequest $request): JsonResponse
     {
         $validated = $request->validated();
+        $email = strtolower(trim($validated['email']));
 
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-        ]);
-
-        // Assign Free plan subscription
-        $freePlan = Plan::where('name', 'free')->first();
-        if ($freePlan) {
-            $user->subscriptions()->create([
-                'plan_id' => $freePlan->id,
-                'status' => 'active',
-                'starts_at' => now(),
+        $user = DB::transaction(function () use ($validated, $email) {
+            $user = User::create([
+                'name' => trim($validated['name']),
+                'email' => $email,
+                'password' => Hash::make($validated['password']),
             ]);
-        }
+
+            // Assign Free plan subscription
+            $freePlan = Plan::where('name', 'free')->first();
+            if ($freePlan) {
+                $user->subscriptions()->create([
+                    'plan_id' => $freePlan->id,
+                    'status' => 'active',
+                    'starts_at' => now(),
+                ]);
+            }
+
+            return $user;
+        });
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -54,10 +60,11 @@ class AuthController extends Controller
     public function login(LoginRequest $request): JsonResponse
     {
         $validated = $request->validated();
+        $email = strtolower(trim($validated['email']));
 
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::where('email', $email)->first();
 
-        if (!$user || !Hash::check($validated['password'], $user->password)) {
+        if (! $user || ! Hash::check($validated['password'], $user->password)) {
             return $this->errorResponse('Invalid credentials', Response::HTTP_UNAUTHORIZED);
         }
 

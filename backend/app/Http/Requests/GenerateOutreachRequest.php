@@ -16,6 +16,7 @@ class GenerateOutreachRequest extends FormRequest
         return [
             'channel' => ['required', 'string', 'in:email,linkedin,cold_call'],
             'tone' => ['nullable', 'string', 'max:50'],
+            'regenerate' => ['nullable', 'boolean'],
         ];
     }
 }

@@ -16,7 +16,7 @@ class UpdateLeadRequest extends FormRequest
         return [
             'status' => ['nullable', 'in:new,qualified,contacted,replied,meeting,won,lost'],
             'priority' => ['nullable', 'in:high,medium,low'],
-            'notes' => ['nullable', 'string'],
+            'notes' => ['nullable', 'string', 'max:5000'],
             'overall_score' => ['nullable', 'integer', 'min:0', 'max:100'],
             'icp_score' => ['nullable', 'integer', 'min:0', 'max:100'],
             'buying_intent_score' => ['nullable', 'integer', 'min:0', 'max:100'],

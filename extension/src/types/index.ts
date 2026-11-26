@@ -75,6 +75,7 @@ export interface Opportunity {
 }
 
 export interface CompanyAnalysis {
+  lead_id?: number;
   company_name: string;
   website: string;
   industry: string;
@@ -156,4 +157,8 @@ export type ExtensionMessage =
   | { type: 'PAGE_DATA_RESULT'; data: PageData }
   | { type: 'OPEN_SIDE_PANEL' }
   | { type: 'GET_CURRENT_TAB_URL' }
-  | { type: 'CURRENT_TAB_URL'; url: string };
+  | { type: 'CURRENT_TAB_URL'; url: string }
+  | { type: 'REGISTER_SIDE_PANEL' }
+  | { type: 'CLEAR_SIDE_PANEL_OWNER'; tabId?: number | null }
+  | { type: 'CLOSE_SIDE_PANEL'; keepTabId?: number | null }
+  | { type: 'FORCE_CLOSE_SIDE_PANEL' };

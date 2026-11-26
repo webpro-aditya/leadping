@@ -2,12 +2,15 @@ import React from 'react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import type { CompanyAnalysis } from '../../types';
+import { safeExternalUrl } from '../../utils/url';
 
 interface CompanyOverviewProps {
   analysis: CompanyAnalysis;
 }
 
 export const CompanyOverview: React.FC<CompanyOverviewProps> = ({ analysis }) => {
+  const safeHref = safeExternalUrl(analysis.website);
+
   return (
     <Card className="space-y-3">
       {/* Title & Industry */}
@@ -16,17 +19,23 @@ export const CompanyOverview: React.FC<CompanyOverviewProps> = ({ analysis }) =>
           <h2 className="text-base font-bold text-slate-900 leading-tight">
             {analysis.company_name}
           </h2>
-          <a
-            href={analysis.website}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline break-all inline-flex items-center gap-1 mt-0.5"
-          >
-            {analysis.website}
-            <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
+          {safeHref ? (
+            <a
+              href={safeHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline break-all inline-flex items-center gap-1 mt-0.5"
+            >
+              {analysis.website}
+              <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          ) : (
+            <span className="text-xs text-slate-400 break-all mt-0.5 block">
+              {analysis.website || 'No website'}
+            </span>
+          )}
         </div>
         <Badge variant="primary" size="sm">
           {analysis.industry || 'B2B'}

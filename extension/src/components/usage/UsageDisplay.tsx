@@ -9,8 +9,8 @@ export const UsageDisplay: React.FC = () => {
 
   const renderProgressBar = (used: number, limit: number) => {
     const isUnlimited = limit === -1;
-    const percentage = isUnlimited ? 0 : Math.min(Math.round((used / limit) * 100), 100);
-    const isClose = percentage >= 80;
+    const percentage = isUnlimited || limit <= 0 ? 0 : Math.min(Math.round((used / limit) * 100), 100);
+    const isClose = !isUnlimited && percentage >= 80;
 
     return (
       <div className="space-y-1">

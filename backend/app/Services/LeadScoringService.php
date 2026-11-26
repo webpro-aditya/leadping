@@ -7,6 +7,16 @@ use App\Models\Lead;
 class LeadScoringService
 {
     /**
+     * Clamp any numeric score strictly into [0, 100].
+     */
+    protected function clampScore(int|float|string|null $value, int $default = 70): int
+    {
+        $intVal = is_numeric($value) ? (int) round((float) $value) : $default;
+
+        return max(0, min(100, $intVal));
+    }
+
+    /**
      * Calculate priority based on overall score.
      */
     public function calculatePriority(int $overallScore): string
@@ -30,14 +40,16 @@ class LeadScoringService
         $icp = $aiResponse['icp_score'] ?? [];
         $leadQual = $aiResponse['lead_qualification'] ?? [];
 
-        $icpScore = (int) ($icp['overall'] ?? $leadQual['icp_fit'] ?? 70);
-        $buyingIntentScore = (int) ($leadQual['buying_intent'] ?? $icp['buying_signal_score'] ?? 70);
-        $painFitScore = (int) ($leadQual['pain_fit'] ?? $icp['problem_fit'] ?? 70);
+        $icpScore = $this->clampScore($icp['overall'] ?? $leadQual['icp_fit'] ?? null);
+        $buyingIntentScore = $this->clampScore($leadQual['buying_intent'] ?? $icp['buying_signal_score'] ?? null);
+        $painFitScore = $this->clampScore($leadQual['pain_fit'] ?? $icp['problem_fit'] ?? null);
 
-        $overall = (int) ($leadQual['overall'] ?? round(($icpScore + $buyingIntentScore + $painFitScore) / 3));
+        $overall = $this->clampScore(
+            $leadQual['overall'] ?? round(($icpScore + $buyingIntentScore + $painFitScore) / 3)
+        );
 
         $priorityFromAi = strtolower((string) ($leadQual['priority'] ?? ''));
-        $priority = in_array($priorityFromAi, ['high', 'medium', 'low'])
+        $priority = in_array($priorityFromAi, ['high', 'medium', 'low'], true)
             ? $priorityFromAi
             : $this->calculatePriority($overall);
 
@@ -55,19 +67,24 @@ class LeadScoringService
      */
     public function updateLeadScores(Lead $lead, array $scores): Lead
     {
-        $overall = $scores['overall_score'] ?? round(
-            (($scores['icp_score'] ?? $lead->icp_score) +
-             ($scores['buying_intent_score'] ?? $lead->buying_intent_score) +
-             ($scores['pain_fit_score'] ?? $lead->pain_fit_score)) / 3
+        $icpScore = isset($scores['icp_score']) ? $this->clampScore($scores['icp_score']) : $lead->icp_score;
+        $buyingIntentScore = isset($scores['buying_intent_score']) ? $this->clampScore($scores['buying_intent_score']) : $lead->buying_intent_score;
+        $painFitScore = isset($scores['pain_fit_score']) ? $this->clampScore($scores['pain_fit_score']) : $lead->pain_fit_score;
+
+        $overall = $this->clampScore(
+            $scores['overall_score'] ?? round(($icpScore + $buyingIntentScore + $painFitScore) / 3)
         );
 
-        $priority = $scores['priority'] ?? $this->calculatePriority((int) $overall);
+        $priorityFromInput = strtolower((string) ($scores['priority'] ?? ''));
+        $priority = in_array($priorityFromInput, ['high', 'medium', 'low'], true)
+            ? $priorityFromInput
+            : $this->calculatePriority($overall);
 
         $lead->update([
-            'icp_score' => $scores['icp_score'] ?? $lead->icp_score,
-            'buying_intent_score' => $scores['buying_intent_score'] ?? $lead->buying_intent_score,
-            'pain_fit_score' => $scores['pain_fit_score'] ?? $lead->pain_fit_score,
-            'overall_score' => (int) $overall,
+            'icp_score' => $icpScore,
+            'buying_intent_score' => $buyingIntentScore,
+            'pain_fit_score' => $painFitScore,
+            'overall_score' => $overall,
             'priority' => $priority,
         ]);
 

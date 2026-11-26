@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { Modal } from '../components/ui/Modal';
 import { LeadStatusBadge } from '../components/leads/LeadStatusBadge';
+import { safeExternalUrl } from '../utils/url';
 
 export const LeadDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -156,21 +157,29 @@ export const LeadDetailPage: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-            {lead.company?.website && (
-              <a
-                href={lead.company.website}
-                target="_blank"
-                rel="noreferrer"
-                className="text-indigo-600 hover:underline flex items-center"
-              >
-                {lead.company.website}
-                <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-              </a>
-            )}
+            {(lead.company?.website || lead.source_url || lead.url) && (() => {
+              const displayUrl = lead.company?.website || lead.source_url || lead.url;
+              const safeHref = safeExternalUrl(displayUrl);
+              return safeHref ? (
+                <a
+                  href={safeHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 hover:underline flex items-center"
+                >
+                  {displayUrl}
+                  <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              ) : (
+                <span>{displayUrl}</span>
+              );
+            })()}
             {lead.company?.industry && <span>Industry: {lead.company.industry}</span>}
-            {lead.company?.size && <span>Size: {lead.company.size}</span>}
+            {(lead.company?.company_size || lead.company?.size) && (
+              <span>Size: {lead.company.company_size || lead.company.size}</span>
+            )}
             {lead.company?.location && <span>Location: {lead.company.location}</span>}
             <span>Added {new Date(lead.created_at).toLocaleDateString()}</span>
           </div>
@@ -227,41 +236,49 @@ export const LeadDetailPage: React.FC = () => {
           </Card>
 
           {/* AI Summary Card */}
-          {lead.summary && (
+          {(lead.ai_summary || lead.summary) && (
             <Card title="AI Intelligence Summary">
               <div className="rounded-lg bg-indigo-50/50 p-4 border border-indigo-100 text-sm text-slate-800 leading-relaxed whitespace-pre-line">
-                {lead.summary}
+                {lead.ai_summary || lead.summary}
               </div>
             </Card>
           )}
 
           {/* Buying Signals */}
-          <Card
-            title="Buying Signals"
-            subtitle={`${lead.buying_signals?.length || 0} signal(s) identified`}
-          >
-            {(!lead.buying_signals || lead.buying_signals.length === 0) ? (
-              <p className="text-xs text-slate-400">No buying signals recorded.</p>
-            ) : (
-              <div className="space-y-3">
-                {lead.buying_signals.map((sig, i) => (
-                  <div key={i} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/50">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm font-semibold text-slate-900">{sig.signal}</span>
-                      <Badge variant={getConfidenceVariant(sig.confidence)} size="sm">
-                        {sig.confidence} confidence
-                      </Badge>
-                    </div>
-                    {sig.evidence && (
-                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                        <span className="font-semibold text-slate-700">Evidence:</span> {sig.evidence}
-                      </p>
-                    )}
+          {(() => {
+            const signals = lead.signals || lead.buying_signals || [];
+            return (
+              <Card
+                title="Buying Signals"
+                subtitle={`${signals.length} signal(s) identified`}
+              >
+                {signals.length === 0 ? (
+                  <p className="text-xs text-slate-400">No buying signals recorded.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {signals.map((sig, i) => (
+                      <div key={i} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/50">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-semibold text-slate-900">
+                            {sig.description || sig.signal}
+                          </span>
+                          <Badge variant={getConfidenceVariant(sig.confidence)} size="sm">
+                            {sig.confidence} confidence
+                          </Badge>
+                        </div>
+                        {(sig.source_url || sig.evidence) && (
+                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                            <span className="font-semibold text-slate-700">Source:</span>{' '}
+                            {sig.source_url || sig.evidence}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                )}
+              </Card>
+            );
+          })()}
 
           {/* Pain Points */}
           <Card
@@ -272,21 +289,26 @@ export const LeadDetailPage: React.FC = () => {
               <p className="text-xs text-slate-400">No pain points recorded.</p>
             ) : (
               <div className="space-y-3">
-                {lead.pain_points.map((p, i) => (
-                  <div key={i} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/50">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm font-semibold text-slate-900">{p.pain_point}</span>
-                      <Badge variant={p.severity === 'high' ? 'danger' : 'warning'} size="sm">
-                        {p.severity} severity
-                      </Badge>
+                {lead.pain_points.map((p, i) => {
+                  const severity = p.severity || p.confidence || 'medium';
+                  return (
+                    <div key={i} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/50">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-semibold text-slate-900">
+                          {p.title || p.pain_point}
+                        </span>
+                        <Badge variant={severity === 'high' ? 'danger' : 'warning'} size="sm">
+                          {severity}
+                        </Badge>
+                      </div>
+                      {(p.explanation || p.description) && (
+                        <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                          {p.explanation || p.description}
+                        </p>
+                      )}
                     </div>
-                    {p.explanation && (
-                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                        {p.explanation}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -304,15 +326,16 @@ export const LeadDetailPage: React.FC = () => {
                   <div key={i} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/50">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-sm font-semibold text-slate-900">
-                        {opp.opportunity}
+                        {opp.title || opp.opportunity}
                       </span>
                       <Badge variant={opp.priority === 'high' ? 'purple' : 'info'} size="sm">
                         {opp.priority} priority
                       </Badge>
                     </div>
-                    {opp.approach && (
+                    {(opp.potential_solution || opp.approach || opp.description) && (
                       <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                        <span className="font-semibold text-slate-700">Approach:</span> {opp.approach}
+                        <span className="font-semibold text-slate-700">Approach:</span>{' '}
+                        {opp.potential_solution || opp.approach || opp.description}
                       </p>
                     )}
                   </div>
@@ -329,7 +352,7 @@ export const LeadDetailPage: React.FC = () => {
                   <div key={i} className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">
-                        {msg.type}
+                        {msg.channel || msg.type}
                       </span>
                       <Button
                         variant="ghost"
@@ -421,7 +444,7 @@ export const LeadDetailPage: React.FC = () => {
         isLoading={isDeleting}
       >
         <p className="text-sm text-slate-600">
-          Are you sure you want to delete lead <span className="font-semibold text-slate-900">{lead.company?.name || lead.url}</span>? This action cannot be undone.
+          Are you sure you want to delete lead <span className="font-semibold text-slate-900">{lead.company?.name || lead.source_url || lead.url}</span>? This action cannot be undone.
         </p>
       </Modal>
     </div>

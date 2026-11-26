@@ -6,6 +6,8 @@ use App\Models\Plan;
 use App\Models\UsageRecord;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class UsageService
 {
@@ -14,44 +16,59 @@ class UsageService
      */
     public function getCurrentPeriodStart(User $user): Carbon
     {
+        $user->loadMissing('subscription');
         $subscription = $user->subscription;
-        if (!$subscription || !$subscription->starts_at) {
+        if (! $subscription || ! $subscription->starts_at) {
             return Carbon::now()->startOfMonth();
         }
 
         $startsAt = Carbon::parse($subscription->starts_at);
         $now = Carbon::now();
-
-        // Calculate the anchor day of month
         $day = $startsAt->day;
 
-        // Current month candidate
-        $currentMonthCandidate = Carbon::create($now->year, $now->month, min($day, $now->daysInMonth), $startsAt->hour, $startsAt->minute, $startsAt->second);
+        $currentMonthCandidate = Carbon::create(
+            $now->year,
+            $now->month,
+            min($day, $now->daysInMonth),
+            $startsAt->hour,
+            $startsAt->minute,
+            $startsAt->second
+        );
 
         if ($now->greaterThanOrEqualTo($currentMonthCandidate)) {
             return $currentMonthCandidate;
         }
 
         $prevMonth = $now->copy()->subMonth();
-        return Carbon::create($prevMonth->year, $prevMonth->month, min($day, $prevMonth->daysInMonth), $startsAt->hour, $startsAt->minute, $startsAt->second);
+
+        return Carbon::create(
+            $prevMonth->year,
+            $prevMonth->month,
+            min($day, $prevMonth->daysInMonth),
+            $startsAt->hour,
+            $startsAt->minute,
+            $startsAt->second
+        );
     }
 
     /**
-     * Get user plan limits.
+     * Get user plan limits with cached Free-tier fallback.
      */
     public function getUserLimits(User $user): array
     {
-        $subscription = $user->subscription;
-        $plan = $subscription?->plan;
+        $user->loadMissing('subscription.plan');
+        $plan = $user->subscription?->plan;
 
-        if (!$plan) {
-            // Default to free plan limits if no active subscription
-            $freePlan = Plan::where('name', 'free')->first();
-            return [
-                'analyses_limit' => $freePlan->analyses_limit ?? 10,
-                'outreach_limit' => $freePlan->outreach_limit ?? 5,
-                'leads_limit' => $freePlan->leads_limit ?? 25,
-            ];
+        if (! $plan) {
+            return Cache::remember('leadping_free_plan_limits', 3600, function () {
+                $freePlan = Plan::where('name', 'free')->first();
+
+                return [
+                    'analyses_limit' => $freePlan->analyses_limit ?? 10,
+                    'outreach_limit' => $freePlan->outreach_limit ?? 5,
+                    'leads_limit' => $freePlan->leads_limit ?? 25,
+                ];
+            });
         }
 
         return [
@@ -78,7 +95,7 @@ class UsageService
                 $limits['outreach_limit'],
                 $this->getFeatureUsageCount($user, ['outreach_generation'], $periodStart)
             ),
-            'lead_score' => true, // Lead scoring usually free or bundled
+            'lead_score' => true,
             'leads' => $this->isWithinLimit(
                 $limits['leads_limit'],
                 $user->leads()->count()
@@ -87,9 +104,6 @@ class UsageService
         };
     }
 
-    /**
-     * Check if count is within limit (-1 = unlimited).
-     */
     protected function isWithinLimit(int $limit, int $current): bool
     {
         if ($limit === -1) {
@@ -99,9 +113,6 @@ class UsageService
         return $current < $limit;
     }
 
-    /**
-     * Get total credits used for given feature(s) since period start.
-     */
     protected function getFeatureUsageCount(User $user, array $features, Carbon $periodStart): int
     {
         return (int) UsageRecord::where('user_id', $user->id)
@@ -110,12 +121,9 @@ class UsageService
             ->sum('credits_used');
     }
 
-    /**
-     * Record usage for a feature.
-     */
-    public function recordUsage(User $user, string $feature, int $credits = 1, ?string $requestId = null, ?array $metadata = null): void
+    public function recordUsage(User $user, string $feature, int $credits = 1, ?string $requestId = null, ?array $metadata = null): UsageRecord
     {
-        UsageRecord::create([
+        return UsageRecord::create([
             'user_id' => $user->id,
             'feature' => $feature,
             'credits_used' => $credits,
@@ -126,7 +134,37 @@ class UsageService
     }
 
     /**
-     * Return current period usage vs limits.
+     * Atomically check and reserve 1 credit for a feature using a per-user cache lock (prevents TOCTOU race).
+     */
+    public function reserveQuota(User $user, string $feature, ?array $metadata = null): ?UsageRecord
+    {
+        $lock = Cache::lock("quota_lock_{$user->id}_{$feature}", 10);
+
+        return $lock->block(5, function () use ($user, $feature, $metadata) {
+            if (! $this->checkUsage($user, $feature)) {
+                return null;
+            }
+
+            return $this->recordUsage(
+                $user,
+                $feature,
+                1,
+                'req_'.Str::random(16),
+                $metadata
+            );
+        });
+    }
+
+    /**
+     * Refund a previously reserved usage record (e.g. when served from cache or AI call failed).
+     */
+    public function refundQuota(?UsageRecord $record): void
+    {
+        $record?->delete();
+    }
+
+    /**
+     * Return current period usage vs limits using a single grouped query for usage records.
      */
     public function getUsage(User $user): array
     {
@@ -134,8 +172,15 @@ class UsageService
         $periodStart = $this->getCurrentPeriodStart($user);
         $periodEnd = $periodStart->copy()->addMonth();
 
-        $analysesUsed = $this->getFeatureUsageCount($user, ['company_analysis', 'ai_research'], $periodStart);
-        $outreachUsed = $this->getFeatureUsageCount($user, ['outreach_generation'], $periodStart);
+        $totalsByFeature = UsageRecord::where('user_id', $user->id)
+            ->whereIn('feature', ['company_analysis', 'ai_research', 'outreach_generation'])
+            ->where('created_at', '>=', $periodStart)
+            ->selectRaw('feature, COALESCE(SUM(credits_used), 0) as total')
+            ->groupBy('feature')
+            ->pluck('total', 'feature');
+
+        $analysesUsed = (int) ($totalsByFeature['company_analysis'] ?? 0) + (int) ($totalsByFeature['ai_research'] ?? 0);
+        $outreachUsed = (int) ($totalsByFeature['outreach_generation'] ?? 0);
         $totalLeads = $user->leads()->count();
 
         return [

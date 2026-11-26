@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
-import { fetchLeads, deleteLead } from '../../services/api';
+import { fetchLeadsPaged, deleteLead } from '../../services/api';
 import type { Lead } from '../../types';
 
 interface SavedLeadsProps {
@@ -12,46 +12,59 @@ interface SavedLeadsProps {
 export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+  const [page, setPage] = useState<number>(1);
+  const [lastPage, setLastPage] = useState<number>(1);
+  const [total, setTotal] = useState<number>(0);
 
-  const loadLeads = async () => {
+  // Debounce server-side search queries so typing doesn't spam the backend
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const loadLeads = useCallback(async (targetPage = 1, append = false, search = debouncedSearch) => {
     try {
-      setLoading(true);
+      if (append) setLoadingMore(true);
+      else setLoading(true);
       setError(null);
-      const res = await fetchLeads();
-      setLeads(res.data || []);
+
+      const res = await fetchLeadsPaged({ page: targetPage, per_page: 20, search });
+      setLeads((prev) => (append ? [...prev, ...res.leads] : res.leads));
+      setPage(res.current_page);
+      setLastPage(res.last_page);
+      setTotal(res.total);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch saved leads';
       setError(msg);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, [debouncedSearch]);
 
   useEffect(() => {
-    loadLeads();
-  }, []);
+    loadLeads(1, false, debouncedSearch);
+  }, [loadLeads, debouncedSearch]);
 
   const handleDelete = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this saved lead?')) return;
     try {
+      setError(null);
       await deleteLead(id);
       setLeads((prev) => prev.filter((l) => l.id !== id));
-    } catch (err) {
-      console.error(err);
+      setTotal((t) => Math.max(0, t - 1));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete lead';
+      setError(msg);
     }
   };
-
-  const filteredLeads = leads.filter((lead) => {
-    const q = searchQuery.toLowerCase();
-    return (
-      lead.company_name.toLowerCase().includes(q) ||
-      (lead.industry && lead.industry.toLowerCase().includes(q)) ||
-      (lead.website && lead.website.toLowerCase().includes(q))
-    );
-  });
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
@@ -67,19 +80,24 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
             Saved Leads
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            {leads.length} qualified prospects in your pipeline
+            {total} qualified prospects in your pipeline
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadLeads} className="h-7 px-2 text-xs">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => loadLeads(1, false, debouncedSearch)}
+          className="h-7 px-2 text-xs"
+        >
           ↻ Refresh
         </Button>
       </div>
 
-      {/* Search Input */}
+      {/* Debounced Server-Side Search Input */}
       <div>
         <input
           type="text"
-          placeholder="Search by company or industry..."
+          placeholder="Search by company, domain, or industry..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full text-xs px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -101,21 +119,26 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
       {error && (
         <Card className="bg-rose-50 border-rose-200 !p-3">
           <p className="text-xs text-rose-700">{error}</p>
-          <Button variant="outline" size="sm" className="mt-2 text-xs" onClick={loadLeads}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2 text-xs"
+            onClick={() => loadLeads(1, false, debouncedSearch)}
+          >
             Retry
           </Button>
         </Card>
       )}
 
       {/* Empty state */}
-      {!loading && !error && filteredLeads.length === 0 && (
+      {!loading && !error && leads.length === 0 && (
         <Card className="py-8 text-center text-slate-500">
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
             📁
           </div>
           <p className="text-xs font-semibold text-slate-700">No leads found</p>
           <p className="text-[11px] text-slate-400 mt-1 max-w-[200px] mx-auto">
-            {searchQuery
+            {debouncedSearch
               ? 'No companies match your search criteria.'
               : 'Analyze any website and click "Save Lead" to collect prospects here.'}
           </p>
@@ -124,7 +147,7 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
 
       {/* Lead Cards List */}
       <div className="space-y-2">
-        {filteredLeads.map((lead) => (
+        {leads.map((lead) => (
           <div
             key={lead.id}
             onClick={() => onSelectLead(lead.id)}
@@ -173,6 +196,19 @@ export const SavedLeads: React.FC<SavedLeadsProps> = ({ onSelectLead }) => {
           </div>
         ))}
       </div>
+
+      {/* Pagination Load More */}
+      {!loading && page < lastPage && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full text-xs"
+          isLoading={loadingMore}
+          onClick={() => loadLeads(page + 1, true, debouncedSearch)}
+        >
+          Load More ({leads.length} of {total})
+        </Button>
+      )}
     </div>
   );
 };

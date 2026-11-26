@@ -7,12 +7,19 @@ use App\Models\Company;
 use App\Models\Lead;
 use App\Models\User;
 use App\Services\AI\AIManager;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class CompanyAnalysisService
 {
+    private const TRACKING_QUERY_PARAMS = [
+        'ncid', 'fbclid', 'gclid', 'yclid', 'dclid', 'msclkid',
+        'mc_cid', 'mc_eid', 'ref', 'ref_src', '_hsenc', '_hsmi', 'igshid',
+    ];
+
     public function __construct(
         protected AIManager $aiManager,
         protected LeadScoringService $scoringService
@@ -23,78 +30,82 @@ class CompanyAnalysisService
      */
     public function analyze(User $user, array $pageData): array
     {
-        $url = trim($pageData['url'] ?? '');
-        $cacheKey = 'company_analysis_' . $user->id . '_' . md5($url);
+        $rawUrl = trim($pageData['url'] ?? '');
+        $normalizedUrl = $this->normalizeUrl($rawUrl);
+        $urlHash = md5($normalizedUrl);
+        $userCacheKey = "company_analysis_{$user->id}_{$urlHash}";
+        $sharedAiCacheKey = "ai_company_output_{$urlHash}";
 
-        // Check 24-hour cache
-        if (Cache::has($cacheKey)) {
-            $cached = Cache::get($cacheKey);
+        // 1. Check 24-hour per-user cache
+        if (Cache::has($userCacheKey)) {
+            $cached = Cache::get($userCacheKey);
             $cached['cached'] = true;
+
             return $cached;
         }
 
-        // Check if DB analysis exists within last 24 hours
+        // 2. Check if DB analysis exists for this user within last 24 hours
         $existing = AIAnalysis::where('user_id', $user->id)
-            ->where('source_url', $url)
+            ->whereIn('source_url', array_unique([$normalizedUrl, $rawUrl]))
             ->where('created_at', '>=', now()->subHours(24))
             ->latest()
-            ->with(['company', 'lead.signals', 'lead.painPoints', 'lead.opportunities'])
+            ->with(['company', 'lead'])
             ->first();
 
         if ($existing && $existing->structured_response) {
-            $data = $existing->structured_response;
-            $data['analysis_id'] = $existing->id;
-            $data['lead_id'] = $existing->lead_id;
-            $data['company_id'] = $existing->company_id;
-            $data['cached'] = true;
-            Cache::put($cacheKey, $data, now()->addHours(24));
+            $data = $this->formatResponse(
+                $existing->structured_response,
+                $existing->id,
+                (int) $existing->lead_id,
+                (int) $existing->company_id,
+                true,
+                $rawUrl
+            );
+            Cache::put($userCacheKey, $data, now()->addHours(24));
+
             return $data;
         }
 
         // Sanitize page data
         $sanitizedPageData = $this->sanitizePageData($pageData);
 
-        // Call AI Provider
-        $aiResult = $this->aiManager->analyzeCompany($sanitizedPageData);
+        // 3. Reuse shared 24h AI result with stampede lock so concurrent requests share 1 OpenAI call
+        [$aiResult, $usedSharedCache] = $this->resolveSharedOrFreshAnalysis($sharedAiCacheKey, $sanitizedPageData);
 
         // Save company, lead, signals, and analysis in a transaction
-        $analysisRecord = DB::transaction(function () use ($user, $url, $sanitizedPageData, $aiResult) {
-            $isLinkedIn = str_contains($url, 'linkedin.com');
-            $website = $this->extractCleanWebsite($url);
+        $analysisRecord = DB::transaction(function () use ($user, $rawUrl, $normalizedUrl, $sanitizedPageData, $aiResult, $usedSharedCache) {
+            $isLinkedIn = str_contains($normalizedUrl, 'linkedin.com');
+            $website = $this->extractCleanWebsite($normalizedUrl);
 
             if ($isLinkedIn && $website === 'linkedin.com') {
                 $compName = $aiResult['company']['name'] ?? '';
                 $slug = Str::slug($compName);
-                $website = $slug ? "{$slug}.com" : "prospect-" . substr(md5($url), 0, 8) . ".com";
+                $website = $slug ? "{$slug}.com" : 'prospect-'.substr(md5($normalizedUrl), 0, 8).'.com';
             }
 
-            // Create or update company
-            $company = Company::updateOrCreate(
-                ['website' => $website],
-                [
-                    'name' => $aiResult['company']['name'] ?: ($sanitizedPageData['title'] ?? $website),
-                    'industry' => $aiResult['company']['industry'] ?? null,
-                    'description' => $aiResult['company']['description'] ?? null,
-                    'location' => $aiResult['company']['location'] ?? null,
-                    'company_size' => $aiResult['company']['company_size'] ?? null,
-                    'business_model' => $aiResult['company']['business_model'] ?? null,
-                    'products_services' => $aiResult['company']['products_services'] ?? [],
-                    'target_customers' => $aiResult['company']['target_customers'] ?? null,
-                    'raw_data' => $sanitizedPageData,
-                ]
-            );
+            $companyAttributes = [
+                'name' => $aiResult['company']['name'] ?: ($sanitizedPageData['title'] ?? $website),
+                'industry' => $aiResult['company']['industry'] ?? null,
+                'description' => $aiResult['company']['description'] ?? null,
+                'location' => $aiResult['company']['location'] ?? null,
+                'company_size' => $aiResult['company']['company_size'] ?? null,
+                'business_model' => $aiResult['company']['business_model'] ?? null,
+                'products_services' => $aiResult['company']['products_services'] ?? [],
+                'target_customers' => $aiResult['company']['target_customers'] ?? null,
+                'raw_data' => $sanitizedPageData,
+            ];
 
-            // Calculate lead score & priority
+            $company = $this->upsertCompanyRaceSafe($website, $companyAttributes);
+
             $scores = $this->scoringService->extractScores($aiResult);
 
-            // Create or update lead
             $lead = Lead::updateOrCreate(
                 [
                     'user_id' => $user->id,
                     'company_id' => $company->id,
                 ],
                 [
-                    'source_url' => $url,
+                    'source_url' => $normalizedUrl,
                     'icp_score' => $scores['icp_score'],
                     'buying_intent_score' => $scores['buying_intent_score'],
                     'pain_fit_score' => $scores['pain_fit_score'],
@@ -105,18 +116,16 @@ class CompanyAnalysisService
                 ]
             );
 
-            // Sync buying signals
             $lead->signals()->delete();
             foreach ($aiResult['buying_signals'] as $signal) {
                 $lead->signals()->create([
                     'description' => $signal['description'],
                     'confidence' => $signal['confidence'],
-                    'source_url' => $signal['source'] ?: $url,
+                    'source_url' => $signal['source'] ?: $rawUrl,
                     'observed_or_inferred' => $signal['observed_or_inferred'],
                 ]);
             }
 
-            // Sync pain points
             $lead->painPoints()->delete();
             foreach ($aiResult['pain_points'] as $painPoint) {
                 $lead->painPoints()->create([
@@ -127,7 +136,6 @@ class CompanyAnalysisService
                 ]);
             }
 
-            // Sync opportunities
             $lead->opportunities()->delete();
             foreach ($aiResult['opportunities'] as $opportunity) {
                 $lead->opportunities()->create([
@@ -139,8 +147,7 @@ class CompanyAnalysisService
                 ]);
             }
 
-            // Create AI Analysis record
-            $tokensUsed = $aiResult['_meta']['tokens_used'] ?? 0;
+            $tokensUsed = $usedSharedCache ? 0 : ($aiResult['_meta']['tokens_used'] ?? 0);
             $provider = config('ai.default', 'openai');
             $model = config('ai.providers.openai.model', 'gpt-4o-mini');
 
@@ -148,7 +155,7 @@ class CompanyAnalysisService
                 'user_id' => $user->id,
                 'company_id' => $company->id,
                 'lead_id' => $lead->id,
-                'source_url' => $url,
+                'source_url' => $normalizedUrl,
                 'analysis_type' => 'company_analysis',
                 'raw_response' => $aiResult['_meta']['raw'] ?? $aiResult,
                 'structured_response' => $aiResult,
@@ -158,15 +165,83 @@ class CompanyAnalysisService
             ]);
         });
 
-        $responseData = $aiResult;
-        $responseData['analysis_id'] = $analysisRecord->id;
-        $responseData['lead_id'] = $analysisRecord->lead_id;
-        $responseData['company_id'] = $analysisRecord->company_id;
-        $responseData['cached'] = false;
+        $responseData = $this->formatResponse(
+            $aiResult,
+            $analysisRecord->id,
+            (int) $analysisRecord->lead_id,
+            (int) $analysisRecord->company_id,
+            $usedSharedCache,
+            $rawUrl
+        );
 
-        Cache::put($cacheKey, $responseData, now()->addHours(24));
+        Cache::put($userCacheKey, $responseData, now()->addHours(24));
 
         return $responseData;
+    }
+
+    /**
+     * Format response with both nested schema keys and flat UI-friendly fields.
+     */
+    protected function formatResponse(
+        array $aiResult,
+        int $analysisId,
+        int $leadId,
+        int $companyId,
+        bool $cached,
+        string $sourceUrl
+    ): array {
+        $company = $aiResult['company'] ?? [];
+
+        return array_merge($aiResult, [
+            'company_name' => $company['name'] ?? ($aiResult['company_name'] ?? 'Unknown Company'),
+            'website' => $sourceUrl ?: ($aiResult['website'] ?? ''),
+            'industry' => $company['industry'] ?? ($aiResult['industry'] ?? ''),
+            'location' => $company['location'] ?? ($aiResult['location'] ?? ''),
+            'company_size' => $company['company_size'] ?? ($aiResult['company_size'] ?? ''),
+            'description' => $company['description'] ?? ($aiResult['description'] ?? ''),
+            'products_services' => $company['products_services'] ?? ($aiResult['products_services'] ?? []),
+            'ai_summary' => $aiResult['summary'] ?? ($aiResult['ai_summary'] ?? ''),
+            'analysis_id' => $analysisId,
+            'lead_id' => $leadId,
+            'company_id' => $companyId,
+            'cached' => $cached,
+        ]);
+    }
+
+    /**
+     * Normalize URLs by stripping fragments, tracking query parameters, and trailing slashes.
+     */
+    public function normalizeUrl(string $url): string
+    {
+        $parts = parse_url(trim($url));
+        if (! $parts || empty($parts['host'])) {
+            return trim($url);
+        }
+
+        $scheme = strtolower($parts['scheme'] ?? 'https');
+        $host = strtolower($parts['host']);
+        $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+        $path = $parts['path'] ?? '/';
+        if ($path !== '/') {
+            $path = rtrim($path, '/');
+        }
+
+        $queryString = '';
+        if (! empty($parts['query'])) {
+            parse_str($parts['query'], $params);
+            foreach (array_keys($params) as $key) {
+                $lowerKey = strtolower((string) $key);
+                if (str_starts_with($lowerKey, 'utm_') || in_array($lowerKey, self::TRACKING_QUERY_PARAMS, true)) {
+                    unset($params[$key]);
+                }
+            }
+            if (! empty($params)) {
+                ksort($params);
+                $queryString = '?'.http_build_query($params);
+            }
+        }
+
+        return "{$scheme}://{$host}{$port}{$path}{$queryString}";
     }
 
     /**
@@ -183,19 +258,21 @@ class CompanyAnalysisService
         $cleanContent = preg_replace('/\s+/', ' ', $cleanContent);
         $cleanContent = trim($cleanContent);
 
-        if (mb_strlen($cleanContent) > 20000) {
-            $cleanContent = mb_substr($cleanContent, 0, 20000);
+        if (mb_strlen($cleanContent) > 8000) {
+            $cleanContent = mb_substr($cleanContent, 0, 8000);
         }
 
         return [
             'url' => filter_var($pageData['url'] ?? '', FILTER_SANITIZE_URL),
             'title' => Str::limit(strip_tags((string) ($pageData['title'] ?? '')), 255),
-            'meta_description' => Str::limit(strip_tags((string) ($pageData['meta_description'] ?? '')), 500),
+            'meta_description' => Str::limit(strip_tags((string) ($pageData['meta_description'] ?? '')), 400),
             'headings' => is_array($pageData['headings'] ?? null)
-                ? array_slice(array_map(fn($h) => Str::limit(strip_tags((string)$h), 200), $pageData['headings']), 0, 30)
+                ? array_slice(array_map(fn ($h) => Str::limit(strip_tags((string) $h), 160), $pageData['headings']), 0, 15)
+                : [],
+            'technologies' => is_array($pageData['technologies'] ?? null)
+                ? array_slice(array_map(fn ($t) => Str::limit(strip_tags((string) $t), 60), $pageData['technologies']), 0, 10)
                 : [],
             'content' => $cleanContent,
-            'links' => is_array($pageData['links'] ?? null) ? array_slice($pageData['links'], 0, 20) : [],
         ];
     }
 
@@ -210,5 +287,54 @@ class CompanyAnalysisService
         }
 
         return Str::limit(preg_replace('/^https?:\/\/(www\.)?/i', '', strtolower($url)), 255);
+    }
+
+    /**
+     * Resolve shared 24h cached AI output using a distributed cache lock to prevent stampedes.
+     *
+     * @return array{0: array, 1: bool}
+     */
+    protected function resolveSharedOrFreshAnalysis(string $sharedAiCacheKey, array $sanitizedPageData): array
+    {
+        $cached = Cache::get($sharedAiCacheKey);
+        if (is_array($cached)) {
+            return [$cached, true];
+        }
+
+        try {
+            $lock = Cache::lock("lock_{$sharedAiCacheKey}", 35);
+
+            return $lock->block(30, function () use ($sharedAiCacheKey, $sanitizedPageData) {
+                $rechecked = Cache::get($sharedAiCacheKey);
+                if (is_array($rechecked)) {
+                    return [$rechecked, true];
+                }
+
+                $aiResult = $this->aiManager->analyzeCompany($sanitizedPageData);
+                Cache::put($sharedAiCacheKey, $aiResult, now()->addHours(24));
+
+                return [$aiResult, false];
+            });
+        } catch (LockTimeoutException) {
+            $aiResult = $this->aiManager->analyzeCompany($sanitizedPageData);
+            Cache::put($sharedAiCacheKey, $aiResult, now()->addHours(24));
+
+            return [$aiResult, false];
+        }
+    }
+
+    /**
+     * Upsert company safely even under concurrent inserts on the same unique website.
+     */
+    protected function upsertCompanyRaceSafe(string $website, array $attributes): Company
+    {
+        try {
+            return Company::updateOrCreate(['website' => $website], $attributes);
+        } catch (UniqueConstraintViolationException) {
+            $company = Company::where('website', $website)->firstOrFail();
+            $company->update($attributes);
+
+            return $company;
+        }
     }
 }

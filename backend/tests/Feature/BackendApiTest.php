@@ -156,21 +156,21 @@ class BackendApiTest extends TestCase
                     'confidence' => 'high',
                     'source_url' => 'https://acmecorp.com/careers',
                     'observed_or_inferred' => 'observed',
-                ]
+                ],
             ],
             'pain_points' => [
                 [
                     'title' => 'Slow lead response time',
                     'description' => 'Sales reps manually qualifying leads',
                     'confidence' => 'high',
-                ]
+                ],
             ],
             'opportunities' => [
                 [
                     'title' => 'Automate sales intelligence pipeline',
                     'description' => 'Deploy LeadPing AI extension for instant research',
                     'priority' => 'high',
-                ]
+                ],
             ],
         ]);
 

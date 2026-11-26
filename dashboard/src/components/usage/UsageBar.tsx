@@ -9,7 +9,7 @@ interface UsageBarProps {
 
 export const UsageBar: React.FC<UsageBarProps> = ({ label, used, limit, icon }) => {
   const isUnlimited = limit === -1 || limit >= 999999;
-  const percentage = isUnlimited ? 0 : Math.min(100, Math.round((used / limit) * 100));
+  const percentage = isUnlimited || limit <= 0 ? 0 : Math.min(100, Math.round((used / limit) * 100));
 
   const getBarColor = (pct: number) => {
     if (pct >= 90) return 'bg-red-500';

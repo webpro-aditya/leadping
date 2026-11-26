@@ -17,11 +17,11 @@ export const UsagePage: React.FC = () => {
   }, [fetchUsage]);
 
   const defaultUsage = usage || {
-    analyses_used: 3,
+    analyses_used: 0,
     analyses_limit: 10,
-    outreach_used: 1,
+    outreach_used: 0,
     outreach_limit: 5,
-    leads_used: 6,
+    leads_used: 0,
     leads_limit: 25,
   };
 

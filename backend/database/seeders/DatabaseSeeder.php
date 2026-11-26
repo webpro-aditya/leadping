@@ -29,7 +29,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        if ($freePlan && !$testUser->subscriptions()->exists()) {
+        if ($freePlan && ! $testUser->subscriptions()->exists()) {
             $testUser->subscriptions()->create([
                 'plan_id' => $freePlan->id,
                 'status' => 'active',

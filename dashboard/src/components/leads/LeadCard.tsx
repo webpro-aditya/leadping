@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Lead } from '../../types';
 import { LeadStatusBadge } from './LeadStatusBadge';
 import { Card } from '../ui/Card';
+import { safeExternalUrl } from '../../utils/url';
 
 interface LeadCardProps {
   lead: Lead;
@@ -28,15 +29,25 @@ export const LeadCard: React.FC<LeadCardProps> = ({ lead }) => {
             <h4 className="text-base font-semibold text-slate-900 group-hover:text-indigo-600">
               {lead.company?.name || 'Untitled Company'}
             </h4>
-            <a
-              href={lead.company?.website || lead.url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-xs text-indigo-600 hover:underline mt-0.5 block truncate max-w-[200px]"
-            >
-              {lead.company?.website || lead.url}
-            </a>
+            {(() => {
+              const displayUrl = lead.company?.website || lead.source_url || lead.url;
+              const safeHref = safeExternalUrl(displayUrl);
+              return safeHref ? (
+                <a
+                  href={safeHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs text-indigo-600 hover:underline mt-0.5 block truncate max-w-[200px]"
+                >
+                  {displayUrl}
+                </a>
+              ) : (
+                <span className="text-xs text-slate-400 mt-0.5 block truncate max-w-[200px]">
+                  {displayUrl || 'No website'}
+                </span>
+              );
+            })()}
           </div>
           <div
             className={`px-2.5 py-1 rounded-lg border text-xs font-bold ${getScoreColor(
@@ -48,7 +59,7 @@ export const LeadCard: React.FC<LeadCardProps> = ({ lead }) => {
         </div>
 
         <p className="text-xs text-slate-500 mt-3 line-clamp-2 leading-relaxed">
-          {lead.summary || lead.company?.description || 'No description available'}
+          {lead.ai_summary || lead.summary || lead.company?.description || 'No description available'}
         </p>
 
         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">

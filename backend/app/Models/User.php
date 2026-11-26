@@ -68,4 +68,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(OutreachMessage::class);
     }
+
+    public function paymentTransactions(): HasMany
+    {
+        return $this->hasMany(PaymentTransaction::class);
+    }
 }

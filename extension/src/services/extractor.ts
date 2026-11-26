@@ -85,33 +85,9 @@ export function extractPageData(): PageData {
     }
   });
 
-  // JSON-LD structured data
-  const json_ld: Record<string, unknown>[] = [];
-  document.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
-    try {
-      if (script.textContent) {
-        const parsed = JSON.parse(script.textContent);
-        if (parsed) {
-          json_ld.push(parsed);
-        }
-      }
-    } catch {
-      // ignore invalid json
-    }
-  });
-
-  // Contact info
+  // Data minimization: avoid scraping third-party personal emails or bloated JSON-LD blobs
   const emails: string[] = [];
   const phones: string[] = [];
-  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
-  const textMatches = (document.body?.innerText || '').slice(0, 15000);
-  const foundEmails = textMatches.match(emailRegex) || [];
-  foundEmails.forEach((email) => {
-    const cleanEmail = email.toLowerCase().trim();
-    if (!emails.includes(cleanEmail) && !cleanEmail.endsWith('.png') && !cleanEmail.endsWith('.jpg')) {
-      emails.push(cleanEmail);
-    }
-  });
 
   // Technologies
   const technologies = extractTechnologies();
@@ -122,12 +98,12 @@ export function extractPageData(): PageData {
     meta_description,
     headings: headings.slice(0, 15),
     content: cleanedContent,
-    links: links.slice(0, 20),
+    links: links.slice(0, 10),
     opengraph,
-    json_ld: json_ld.slice(0, 5),
+    json_ld: [],
     contact_info: {
-      emails: emails.slice(0, 5),
-      phones: phones.slice(0, 5),
+      emails,
+      phones,
     },
     technologies,
   };

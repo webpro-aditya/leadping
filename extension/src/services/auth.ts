@@ -50,8 +50,10 @@ export async function getCurrentUser(): Promise<User | null> {
 
   try {
     const response = await fetchUser();
-    await setStoredUser(response.data);
-    return response.data;
+    const rawData = response.data as unknown as { user?: User } & User;
+    const user = rawData?.user ?? rawData;
+    await setStoredUser(user);
+    return user;
   } catch {
     // Token might be expired
     await removeAuthToken();

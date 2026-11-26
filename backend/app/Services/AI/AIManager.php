@@ -20,7 +20,7 @@ class AIManager
     {
         $name = $name ?: config('ai.default', 'openai');
 
-        if (!isset($this->providers[$name])) {
+        if (! isset($this->providers[$name])) {
             $this->providers[$name] = $this->resolve($name);
         }
 
@@ -33,7 +33,7 @@ class AIManager
     protected function resolve(string $name): AIProviderInterface
     {
         return match ($name) {
-            'openai' => new OpenAIProvider(),
+            'openai' => new OpenAIProvider,
             default => throw new InvalidArgumentException("Unsupported AI provider: [{$name}]"),
         };
     }

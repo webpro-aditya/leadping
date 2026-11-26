@@ -73,6 +73,8 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
             <input
               type="text"
               required
+              autoComplete="name"
+              maxLength={255}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Sarah Miller"
@@ -87,6 +89,8 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
             <input
               type="email"
               required
+              autoComplete="email"
+              maxLength={255}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="sarah@company.com"
@@ -101,6 +105,9 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
             <input
               type="password"
               required
+              minLength={8}
+              maxLength={128}
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -115,6 +122,9 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
             <input
               type="password"
               required
+              minLength={8}
+              maxLength={128}
+              autoComplete="new-password"
               value={passwordConfirmation}
               onChange={(e) => setPasswordConfirmation(e.target.value)}
               placeholder="••••••••"
