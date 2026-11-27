@@ -3,6 +3,7 @@
 // ============================================================
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { API_BASE_URL } from '../config';
 import { getAuthToken, removeAuthToken, removeStoredUser } from './storage';
 import { normalizeTargetUrl } from '../utils/url';
 import type {
@@ -16,10 +17,6 @@ import type {
   SubscriptionInfo,
   User,
 } from '../types';
-
-const API_BASE_URL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
-  'http://localhost:8000/api';
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,

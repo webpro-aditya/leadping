@@ -7,7 +7,7 @@ interface AIProviderInterface
     /**
      * Analyze company webpage data and return structured sales intelligence.
      */
-    public function analyzeCompany(array $pageData): array;
+    public function analyzeCompany(array $pageData, array $icpProfile = []): array;
 
     /**
      * Generate personalized outreach message for a specified channel.

@@ -79,6 +79,35 @@ class UsageService
     }
 
     /**
+     * Resolve the user's effective active plan slug.
+     */
+    public function getUserPlanName(User $user): string
+    {
+        $user->loadMissing('subscription.plan');
+        $subscription = $user->subscription;
+
+        if (! $subscription || $subscription->status !== 'active' || ($subscription->ends_at && $subscription->ends_at->isPast())) {
+            return 'free';
+        }
+
+        return strtolower((string) ($subscription->plan?->name ?: 'free'));
+    }
+
+    /**
+     * Check whether the user's active tier unlocks a gated capability.
+     */
+    public function supportsFeature(User $user, string $feature): bool
+    {
+        $planName = $this->getUserPlanName($user);
+
+        return match ($feature) {
+            'custom_icp', 'csv_export' => in_array($planName, ['pro', 'business', 'agency'], true),
+            'crm_webhook' => in_array($planName, ['business', 'agency'], true),
+            default => true,
+        };
+    }
+
+    /**
      * Check if user has credits remaining for a feature.
      */
     public function checkUsage(User $user, string $feature): bool

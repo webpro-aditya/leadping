@@ -136,7 +136,7 @@ export const SubscriptionPage: React.FC = () => {
       outreach: '5 outreach / mo',
       leads: '25 saved leads',
       features: [
-        'Chrome Side Panel intelligence',
+        'Chrome Extension Toolbar Popup',
         'ICP Fit scoring (0-100)',
         'Tech stack detection',
         'Basic lead management',
@@ -153,10 +153,10 @@ export const SubscriptionPage: React.FC = () => {
       leads: '500 saved leads',
       features: [
         'Everything in Free',
-        'Full AI Buying Signals & Pain Points',
         'Custom ICP criteria tuning',
+        'Full AI Buying Signals & Pain Points',
         'CSV Export & bulk actions',
-        'Priority AI model generation',
+        'Multi-channel Outreach (Email, LinkedIn, Call)',
       ],
       isPopular: true,
     },
@@ -165,16 +165,16 @@ export const SubscriptionPage: React.FC = () => {
       name: 'Business',
       price: selectedBilling === 'monthly' ? '$49' : '$39',
       period: '/ month',
-      description: 'For growing sales teams demanding unconstrained lead capture.',
+      description: 'For growing sales teams demanding CRM automation and volume.',
       analyses: '500 analyses / mo',
       outreach: '500 outreach / mo',
       leads: 'Unlimited leads',
       features: [
         'Everything in Pro',
         'Unlimited lead pipeline storage',
-        'CRM Webhook Integrations',
-        'Dedicated API access',
-        'Priority email support',
+        'Signed CRM Webhook Integrations',
+        '1-click CRM Lead Push',
+        'Custom outreach tones & personas',
       ],
     },
     {
@@ -182,16 +182,16 @@ export const SubscriptionPage: React.FC = () => {
       name: 'Agency',
       price: selectedBilling === 'monthly' ? '$99' : '$79',
       period: '/ month',
-      description: 'High-volume lead intelligence for agencies and enterprise teams.',
+      description: 'High-volume lead intelligence for agencies and high-velocity SDR pods.',
       analyses: '2,000 analyses / mo',
       outreach: '2,000 outreach / mo',
-      leads: 'Unlimited leads + team',
+      leads: 'Unlimited saved leads',
       features: [
         'Everything in Business',
-        'Multi-seat team workspace',
-        'White-label intelligence exports',
-        'Custom AI fine-tuning',
-        'Dedicated account manager',
+        'High-volume 2,000 analyses / mo quota',
+        'High-volume 2,000 outreach / mo quota',
+        'Signed CRM Webhook sync at scale',
+        'Priority processing throughput',
       ],
     },
   ];
@@ -373,11 +373,18 @@ export const SubscriptionPage: React.FC = () => {
                 <td className="px-6 py-3.5 text-slate-600">25</td>
                 <td className="px-6 py-3.5 font-semibold text-indigo-600">500</td>
                 <td className="px-6 py-3.5 text-slate-600">Unlimited</td>
-                <td className="px-6 py-3.5 text-slate-600">Unlimited + Team</td>
+                <td className="px-6 py-3.5 text-slate-600">Unlimited</td>
               </tr>
               <tr>
-                <td className="px-6 py-3.5 font-medium text-slate-900">Chrome Side Panel</td>
+                <td className="px-6 py-3.5 font-medium text-slate-900">Chrome Toolbar Popup</td>
                 <td className="px-6 py-3.5 text-slate-600">✓</td>
+                <td className="px-6 py-3.5 font-semibold text-indigo-600">✓</td>
+                <td className="px-6 py-3.5 text-slate-600">✓</td>
+                <td className="px-6 py-3.5 text-slate-600">✓</td>
+              </tr>
+              <tr>
+                <td className="px-6 py-3.5 font-medium text-slate-900">Custom ICP Tuning</td>
+                <td className="px-6 py-3.5 text-slate-400">—</td>
                 <td className="px-6 py-3.5 font-semibold text-indigo-600">✓</td>
                 <td className="px-6 py-3.5 text-slate-600">✓</td>
                 <td className="px-6 py-3.5 text-slate-600">✓</td>
@@ -390,11 +397,11 @@ export const SubscriptionPage: React.FC = () => {
                 <td className="px-6 py-3.5 text-slate-600">✓</td>
               </tr>
               <tr>
-                <td className="px-6 py-3.5 font-medium text-slate-900">Team Collaboration</td>
+                <td className="px-6 py-3.5 font-medium text-slate-900">Signed CRM Webhooks</td>
                 <td className="px-6 py-3.5 text-slate-400">—</td>
                 <td className="px-6 py-3.5 text-slate-400">—</td>
                 <td className="px-6 py-3.5 text-slate-600">✓</td>
-                <td className="px-6 py-3.5 text-slate-600">✓ (Multi-seats)</td>
+                <td className="px-6 py-3.5 text-slate-600">✓</td>
               </tr>
             </tbody>
           </table>

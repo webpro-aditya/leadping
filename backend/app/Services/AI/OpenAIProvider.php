@@ -26,10 +26,11 @@ class OpenAIProvider implements AIProviderInterface
     /**
      * Analyze company webpage data and return structured sales intelligence.
      */
-    public function analyzeCompany(array $pageData): array
+    public function analyzeCompany(array $pageData, array $icpProfile = []): array
     {
         $url = $pageData['url'] ?? '';
         $isLinkedIn = str_contains($url, 'linkedin.com');
+        $hasCustomIcp = ! empty($icpProfile);
 
         $schemaTemplate = json_encode([
             'company' => [
@@ -88,6 +89,9 @@ class OpenAIProvider implements AIProviderInterface
             .($isLinkedIn
                 ? "LINKEDIN RULE: Identify the prospect's EMPLOYER/COMPANY and analyze that company (not LinkedIn), tailoring the pitch to the executive.\n"
                 : '')
+            .($hasCustomIcp
+                ? "CUSTOM ICP RULE: Score icp_score, pain_fit, opportunities, and recommended_pitch specifically against the seller criteria in <custom_icp_criteria>, penalizing disqualifiers.\n"
+                : '')
             ."Respond ONLY with valid JSON matching this schema (max 4 buying_signals, 3 pain_points, 3 opportunities; keep text concise):\n"
             .$schemaTemplate;
 
@@ -107,6 +111,9 @@ class OpenAIProvider implements AIProviderInterface
         }
         if (! empty($headings)) {
             $userLines[] = 'Headings: '.json_encode(array_values($headings), JSON_UNESCAPED_SLASHES);
+        }
+        if ($hasCustomIcp) {
+            $userLines[] = '<custom_icp_criteria>'.json_encode($icpProfile, JSON_UNESCAPED_SLASHES).'</custom_icp_criteria>';
         }
         $userLines[] = "<untrusted_webpage_data>\n".$sanitizedContent."\n</untrusted_webpage_data>";
 

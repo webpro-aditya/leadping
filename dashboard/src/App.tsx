@@ -10,6 +10,12 @@ import { LeadsPage } from './pages/LeadsPage';
 import { LeadDetailPage } from './pages/LeadDetailPage';
 import { UsagePage } from './pages/UsagePage';
 import { SubscriptionPage } from './pages/SubscriptionPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { TermsOfServicePage } from './pages/TermsOfServicePage';
+import { SettingsPage } from './pages/SettingsPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { token, loading } = useAuth();
@@ -63,6 +69,25 @@ export const App: React.FC = () => {
               </PublicOnlyRoute>
             }
           />
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicOnlyRoute>
+                <ForgotPasswordPage />
+              </PublicOnlyRoute>
+            }
+          />
+          <Route
+            path="/reset-password"
+            element={
+              <PublicOnlyRoute>
+                <ResetPasswordPage />
+              </PublicOnlyRoute>
+            }
+          />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsOfServicePage />} />
 
           {/* Protected Application Routes */}
           <Route
@@ -78,6 +103,7 @@ export const App: React.FC = () => {
             <Route path="leads/:id" element={<LeadDetailPage />} />
             <Route path="usage" element={<UsagePage />} />
             <Route path="subscription" element={<SubscriptionPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
 
           {/* Catch-all redirect */}

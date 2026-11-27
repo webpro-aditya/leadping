@@ -20,10 +20,15 @@ class CompanyAnalysisService
         'mc_cid', 'mc_eid', 'ref', 'ref_src', '_hsenc', '_hsmi', 'igshid',
     ];
 
+    protected UsageService $usageService;
+
     public function __construct(
         protected AIManager $aiManager,
-        protected LeadScoringService $scoringService
-    ) {}
+        protected LeadScoringService $scoringService,
+        ?UsageService $usageService = null
+    ) {
+        $this->usageService = $usageService ?? app(UsageService::class);
+    }
 
     /**
      * Analyze company page data for a user.
@@ -33,8 +38,10 @@ class CompanyAnalysisService
         $rawUrl = trim($pageData['url'] ?? '');
         $normalizedUrl = $this->normalizeUrl($rawUrl);
         $urlHash = md5($normalizedUrl);
-        $userCacheKey = "company_analysis_{$user->id}_{$urlHash}";
-        $sharedAiCacheKey = "ai_company_output_{$urlHash}";
+        $icpProfile = $this->extractActiveIcpProfile($user);
+        $icpHash = empty($icpProfile) ? 'default' : md5((string) json_encode($icpProfile));
+        $userCacheKey = "company_analysis_{$user->id}_{$urlHash}_{$icpHash}";
+        $sharedAiCacheKey = "ai_company_output_{$urlHash}_{$icpHash}";
 
         // 1. Check 24-hour per-user cache
         if (Cache::has($userCacheKey)) {
@@ -44,7 +51,7 @@ class CompanyAnalysisService
             return $cached;
         }
 
-        // 2. Check if DB analysis exists for this user within last 24 hours
+        // 2. Check if DB analysis exists for this user within last 24 hours matching active ICP profile
         $existing = AIAnalysis::where('user_id', $user->id)
             ->whereIn('source_url', array_unique([$normalizedUrl, $rawUrl]))
             ->where('created_at', '>=', now()->subHours(24))
@@ -52,7 +59,7 @@ class CompanyAnalysisService
             ->with(['company', 'lead'])
             ->first();
 
-        if ($existing && $existing->structured_response) {
+        if ($existing && $existing->structured_response && ($existing->raw_response['_icp_hash'] ?? 'default') === $icpHash) {
             $data = $this->formatResponse(
                 $existing->structured_response,
                 $existing->id,
@@ -70,10 +77,10 @@ class CompanyAnalysisService
         $sanitizedPageData = $this->sanitizePageData($pageData);
 
         // 3. Reuse shared 24h AI result with stampede lock so concurrent requests share 1 OpenAI call
-        [$aiResult, $usedSharedCache] = $this->resolveSharedOrFreshAnalysis($sharedAiCacheKey, $sanitizedPageData);
+        [$aiResult, $usedSharedCache] = $this->resolveSharedOrFreshAnalysis($sharedAiCacheKey, $sanitizedPageData, $icpProfile);
 
         // Save company, lead, signals, and analysis in a transaction
-        $analysisRecord = DB::transaction(function () use ($user, $rawUrl, $normalizedUrl, $sanitizedPageData, $aiResult, $usedSharedCache) {
+        $analysisRecord = DB::transaction(function () use ($user, $rawUrl, $normalizedUrl, $sanitizedPageData, $aiResult, $usedSharedCache, $icpHash) {
             $isLinkedIn = str_contains($normalizedUrl, 'linkedin.com');
             $website = $this->extractCleanWebsite($normalizedUrl);
 
@@ -157,7 +164,7 @@ class CompanyAnalysisService
                 'lead_id' => $lead->id,
                 'source_url' => $normalizedUrl,
                 'analysis_type' => 'company_analysis',
-                'raw_response' => $aiResult['_meta']['raw'] ?? $aiResult,
+                'raw_response' => array_merge($aiResult['_meta']['raw'] ?? $aiResult, ['_icp_hash' => $icpHash]),
                 'structured_response' => $aiResult,
                 'ai_provider' => $provider,
                 'model_used' => $model,
@@ -290,11 +297,38 @@ class CompanyAnalysisService
     }
 
     /**
+     * Extract non-empty custom ICP fields when unlocked for the user's tier.
+     */
+    protected function extractActiveIcpProfile(User $user): array
+    {
+        if (! $this->usageService->supportsFeature($user, 'custom_icp')) {
+            return [];
+        }
+
+        $raw = $user->icp_profile;
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $filtered = [];
+        foreach ($raw as $key => $value) {
+            $clean = trim((string) $value);
+            if ($clean !== '') {
+                $filtered[$key] = $clean;
+            }
+        }
+
+        ksort($filtered);
+
+        return $filtered;
+    }
+
+    /**
      * Resolve shared 24h cached AI output using a distributed cache lock to prevent stampedes.
      *
      * @return array{0: array, 1: bool}
      */
-    protected function resolveSharedOrFreshAnalysis(string $sharedAiCacheKey, array $sanitizedPageData): array
+    protected function resolveSharedOrFreshAnalysis(string $sharedAiCacheKey, array $sanitizedPageData, array $icpProfile = []): array
     {
         $cached = Cache::get($sharedAiCacheKey);
         if (is_array($cached)) {
@@ -304,19 +338,19 @@ class CompanyAnalysisService
         try {
             $lock = Cache::lock("lock_{$sharedAiCacheKey}", 35);
 
-            return $lock->block(30, function () use ($sharedAiCacheKey, $sanitizedPageData) {
+            return $lock->block(30, function () use ($sharedAiCacheKey, $sanitizedPageData, $icpProfile) {
                 $rechecked = Cache::get($sharedAiCacheKey);
                 if (is_array($rechecked)) {
                     return [$rechecked, true];
                 }
 
-                $aiResult = $this->aiManager->analyzeCompany($sanitizedPageData);
+                $aiResult = $this->aiManager->analyzeCompany($sanitizedPageData, $icpProfile);
                 Cache::put($sharedAiCacheKey, $aiResult, now()->addHours(24));
 
                 return [$aiResult, false];
             });
         } catch (LockTimeoutException) {
-            $aiResult = $this->aiManager->analyzeCompany($sanitizedPageData);
+            $aiResult = $this->aiManager->analyzeCompany($sanitizedPageData, $icpProfile);
             Cache::put($sharedAiCacheKey, $aiResult, now()->addHours(24));
 
             return [$aiResult, false];

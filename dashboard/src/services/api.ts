@@ -2,12 +2,14 @@ import axios from 'axios';
 import type {
   ApiResponse,
   AuthTokens,
+  IcpProfile,
   Lead,
   LeadFilters,
   PaginatedResponse,
   User,
   UsageInfo,
   SubscriptionInfo,
+  WebhookConfig,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -24,14 +26,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 → redirect to login
+// Handle 401 → redirect to login (unless already on a public auth/legal route)
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('token');
       const path = window.location.pathname;
-      if (path !== '/login' && path !== '/register') {
+      const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/privacy', '/terms'];
+      if (!publicPaths.includes(path)) {
         window.location.href = '/login';
       }
     }
@@ -50,6 +53,16 @@ export const authApi = {
       password,
       password_confirmation,
     }),
+  forgotPassword: (email: string) =>
+    api.post<ApiResponse<[]>>('/auth/forgot-password', { email }),
+  resetPassword: (payload: { token: string; email: string; password: string; password_confirmation: string }) =>
+    api.post<ApiResponse<[]>>('/auth/reset-password', payload),
+  resendVerification: () =>
+    api.post<ApiResponse<{ verified: boolean }>>('/auth/email/resend'),
+  changePassword: (payload: { current_password: string; password: string; password_confirmation: string }) =>
+    api.post<ApiResponse<[]>>('/auth/change-password', payload),
+  deleteAccount: (current_password: string) =>
+    api.delete<ApiResponse<[]>>('/auth/account', { data: { current_password } }),
   me: () => api.get<ApiResponse<User>>('/auth/me'),
   logout: () => api.post('/auth/logout'),
 };
@@ -124,6 +137,24 @@ export const paymentsApi = {
     created_at: string;
     plan?: { name: string; display_name: string };
   }>>>('/payments/transactions'),
+};
+
+// ── Settings & Integrations ──
+export const settingsApi = {
+  getIcp: () =>
+    api.get<ApiResponse<{ supported: boolean; plan: string; icp_profile: IcpProfile }>>('/settings/icp'),
+  updateIcp: (payload: IcpProfile) =>
+    api.put<ApiResponse<{ supported: boolean; plan: string; icp_profile: IcpProfile }>>('/settings/icp', payload),
+};
+
+export const integrationsApi = {
+  getWebhook: () => api.get<ApiResponse<WebhookConfig>>('/integrations/webhook'),
+  updateWebhook: (payload: { webhook_url: string; webhook_enabled: boolean; rotate_secret?: boolean }) =>
+    api.put<ApiResponse<WebhookConfig>>('/integrations/webhook', payload),
+  testWebhook: () =>
+    api.post<ApiResponse<{ delivered: boolean; status_code: number; latency_ms: number }>>('/integrations/webhook/test'),
+  pushLeadToWebhook: (leadId: number) =>
+    api.post<ApiResponse<{ delivered: boolean; status_code: number; latency_ms: number }>>(`/leads/${leadId}/push-webhook`),
 };
 
 export default api;

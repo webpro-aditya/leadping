@@ -3,6 +3,7 @@ import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { useUsage } from '../../hooks/useUsage';
+import { openDashboardPath } from '../../config';
 
 export const UsageDisplay: React.FC = () => {
   const { usage, subscription, loading, error, refresh } = useUsage();
@@ -86,14 +87,7 @@ export const UsageDisplay: React.FC = () => {
                 variant="primary"
                 size="sm"
                 className="text-xs"
-                onClick={() => {
-                  const targetUrl = 'http://localhost:5173/subscription';
-                  if (chrome.tabs?.create) {
-                    chrome.tabs.create({ url: targetUrl });
-                  } else {
-                    window.open(targetUrl, '_blank');
-                  }
-                }}
+                onClick={() => openDashboardPath('/subscription')}
               >
                 Upgrade Plan
               </Button>

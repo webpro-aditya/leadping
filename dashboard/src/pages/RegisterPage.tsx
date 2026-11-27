@@ -121,11 +121,22 @@ export const RegisterPage: React.FC = () => {
             </div>
           </form>
 
-          <div className="mt-6 text-center text-xs text-slate-500 border-t border-slate-100 pt-5">
-            Already have an account?{' '}
-            <Link to="/login" className="font-semibold text-indigo-600 hover:text-indigo-500 hover:underline">
-              Sign in
-            </Link>
+          <div className="mt-6 text-center text-xs text-slate-500 border-t border-slate-100 pt-5 space-y-2">
+            <div>
+              Already have an account?{' '}
+              <Link to="/login" className="font-semibold text-indigo-600 hover:text-indigo-500 hover:underline">
+                Sign in
+              </Link>
+            </div>
+            <div className="flex items-center justify-center space-x-3 text-[11px] text-slate-400">
+              <Link to="/privacy" className="hover:text-slate-600 hover:underline">
+                Privacy Policy
+              </Link>
+              <span>•</span>
+              <Link to="/terms" className="hover:text-slate-600 hover:underline">
+                Terms of Service
+              </Link>
+            </div>
           </div>
         </div>
       </div>

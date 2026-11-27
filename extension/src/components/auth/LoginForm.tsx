@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
+import { openDashboardPath } from '../../config';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -70,9 +71,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
           </div>
 
           <div>
-            <label className="text-[11px] font-semibold text-slate-700 block mb-1">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-slate-700 block">
+                Password
+              </label>
+              <button
+                type="button"
+                onClick={() => openDashboardPath('/forgot-password')}
+                className="text-[11px] text-indigo-600 hover:text-indigo-800 hover:underline font-medium"
+              >
+                Forgot password?
+              </button>
+            </div>
             <input
               type="password"
               required
@@ -106,9 +116,23 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
         </form>
       </Card>
 
-      <p className="text-[11px] text-slate-400 text-center mt-6">
-        Protected with enterprise encryption &amp; strict CSP.
-      </p>
+      <div className="text-[11px] text-slate-400 text-center mt-5 flex items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={() => openDashboardPath('/privacy')}
+          className="hover:text-slate-600 hover:underline"
+        >
+          Privacy Policy
+        </button>
+        <span>•</span>
+        <button
+          type="button"
+          onClick={() => openDashboardPath('/terms')}
+          className="hover:text-slate-600 hover:underline"
+        >
+          Terms of Service
+        </button>
+      </div>
     </div>
   );
 };

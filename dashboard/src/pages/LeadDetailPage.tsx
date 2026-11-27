@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { leadsApi } from '../services/api';
+import { integrationsApi, leadsApi } from '../services/api';
 import type { Lead, LeadStatus } from '../types';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -22,6 +22,8 @@ export const LeadDetailPage: React.FC = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [notesSavedAlert, setNotesSavedAlert] = useState(false);
+  const [pushingWebhook, setPushingWebhook] = useState(false);
+  const [webhookPushResult, setWebhookPushResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     const fetchLead = async () => {
@@ -77,6 +79,26 @@ export const LeadDetailPage: React.FC = () => {
       alert('Failed to delete lead');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handlePushWebhook = async () => {
+    if (!lead) return;
+    setPushingWebhook(true);
+    setWebhookPushResult(null);
+    try {
+      const { data } = await integrationsApi.pushLeadToWebhook(lead.id);
+      setWebhookPushResult({
+        type: 'success',
+        text: data.message || 'Lead pushed to CRM webhook.',
+      });
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'CRM webhook push failed. Verify your webhook settings.';
+      setWebhookPushResult({ type: 'error', text: msg });
+    } finally {
+      setPushingWebhook(false);
     }
   };
 
@@ -140,11 +162,26 @@ export const LeadDetailPage: React.FC = () => {
               onChange={(e) => handleStatusChange(e.target.value as LeadStatus)}
             />
           </div>
+          <Button variant="secondary" size="md" onClick={handlePushWebhook} isLoading={pushingWebhook}>
+            Push to CRM
+          </Button>
           <Button variant="danger" size="md" onClick={() => setDeleteModalOpen(true)}>
             Delete
           </Button>
         </div>
       </div>
+
+      {webhookPushResult && (
+        <div
+          className={`rounded-lg px-4 py-2.5 text-xs font-medium border ${
+            webhookPushResult.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {webhookPushResult.text}
+        </div>
+      )}
 
       {/* Hero Overview Header */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">

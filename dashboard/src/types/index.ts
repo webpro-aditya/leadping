@@ -4,7 +4,28 @@ export interface User {
   name: string;
   email: string;
   plan: string;
+  email_verified_at?: string | null;
   created_at: string;
+}
+
+export interface IcpProfile {
+  product_description: string;
+  target_industries: string;
+  target_company_sizes: string;
+  target_regions: string;
+  target_personas: string;
+  ideal_pain_points: string;
+  disqualifiers: string;
+}
+
+export interface WebhookConfig {
+  supported: boolean;
+  plan: string;
+  webhook_url: string;
+  webhook_enabled: boolean;
+  has_secret: boolean;
+  secret_preview: string | null;
+  new_secret?: string | null;
 }
 
 export interface AuthTokens {

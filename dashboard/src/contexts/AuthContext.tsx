@@ -23,6 +23,7 @@ function unwrapUser(payload: unknown): User {
     name: String(rawUser.name ?? ''),
     email: String(rawUser.email ?? ''),
     plan: String(rawUser.plan || sub?.plan?.name || 'free'),
+    email_verified_at: rawUser.email_verified_at ? String(rawUser.email_verified_at) : null,
     created_at: String(rawUser.created_at ?? ''),
   };
 }
